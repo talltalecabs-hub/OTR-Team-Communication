@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#111111" />
+  <title>OTR Team Communication Portal — V0.1</title>
+  <style>
+    :root{
+      --bg:#0f1115;
+      --panel:#191d24;
+      --panel2:#222833;
+      --text:#f5f7fa;
+      --muted:#aeb7c4;
+      --accent:#ffffff;
+      --danger:#ff7a7a;
+      --ok:#9be29b;
+      --border:#343b48;
+      --radius:18px;
+      --gap:18px;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:Arial,Helvetica,sans-serif}
+    body{min-height:100vh}
+    button,input,textarea,select{font:inherit}
+    button{touch-action:manipulation}
+    .app{max-width:1180px;margin:0 auto;padding:24px}
+    .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:22px}
+    .brand h1{font-size:clamp(28px,4vw,52px);margin:0;line-height:1}
+    .brand p{margin:8px 0 0;color:var(--muted);font-size:18px}
+    .pill{border:1px solid var(--border);padding:10px 14px;border-radius:999px;color:var(--muted);font-size:14px}
+    .screen{display:none}
+    .screen.active{display:block}
+    .hero{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:26px;margin-bottom:20px}
+    .hero h2{font-size:clamp(28px,3.5vw,44px);margin:0 0 10px}
+    .hero p{font-size:19px;color:var(--muted);margin:0;line-height:1.45}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--gap)}
+    .bigbtn{
+      width:100%;min-height:118px;border:1px solid var(--border);background:var(--panel);
+      color:var(--text);border-radius:var(--radius);padding:22px;text-align:left;cursor:pointer;
+      display:flex;flex-direction:column;justify-content:center;gap:8px
+    }
+    .bigbtn:active{transform:scale(.99);background:var(--panel2)}
+    .bigbtn strong{font-size:26px}
+    .bigbtn span{color:var(--muted);font-size:17px;line-height:1.35}
+    .sectiontitle{font-size:34px;margin:0 0 8px}
+    .subtitle{color:var(--muted);font-size:18px;margin:0 0 22px}
+    .categories{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+    .catbtn{
+      min-height:92px;border:1px solid var(--border);background:var(--panel);color:var(--text);
+      border-radius:16px;padding:18px;text-align:left;font-size:23px;font-weight:700;cursor:pointer
+    }
+    .catbtn:active{background:var(--panel2)}
+    .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:22px;margin-bottom:18px}
+    label{display:block;font-size:20px;font-weight:700;margin-bottom:10px}
+    textarea,input,select{
+      width:100%;background:#0b0d11;color:var(--text);border:1px solid var(--border);
+      border-radius:14px;padding:16px;font-size:19px;outline:none
+    }
+    textarea{min-height:130px;resize:vertical}
+    .charhint{color:var(--muted);font-size:14px;margin-top:8px}
+    .actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:18px}
+    .primary,.secondary,.danger{
+      min-height:58px;border-radius:14px;padding:14px 22px;font-weight:700;font-size:19px;cursor:pointer
+    }
+    .primary{background:var(--accent);color:#111;border:none}
+    .secondary{background:var(--panel2);color:var(--text);border:1px solid var(--border)}
+    .danger{background:transparent;color:var(--danger);border:1px solid var(--danger)}
+    .question{margin-bottom:22px}
+    .scale{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin-top:12px}
+    .scale button{
+      min-height:58px;border:1px solid var(--border);background:#0b0d11;color:var(--text);
+      border-radius:12px;font-size:20px;font-weight:700;cursor:pointer
+    }
+    .scale button.selected{background:var(--text);color:#111}
+    .scalehelp{display:flex;justify-content:space-between;color:var(--muted);font-size:13px;margin-top:6px}
+    .notice{border-left:5px solid var(--ok);padding:16px 18px;background:var(--panel);border-radius:12px;font-size:18px;line-height:1.4}
+    .thankyou{text-align:center;padding:50px 20px}
+    .thankyou h2{font-size:48px;margin:0 0 12px}
+    .thankyou p{color:var(--muted);font-size:21px;max-width:680px;margin:0 auto 28px;line-height:1.45}
+    .adminrow{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;border-bottom:1px solid var(--border);padding:14px 0}
+    .adminrow:last-child{border-bottom:none}
+    .small{font-size:14px;color:var(--muted)}
+    .back{margin-bottom:18px}
+    .hidden{display:none !important}
+    @media (max-width:720px){
+      .app{padding:16px}
+      .grid,.categories{grid-template-columns:1fr}
+      .topbar{align-items:flex-start}
+      .pill{display:none}
+      .bigbtn{min-height:102px}
+      .bigbtn strong{font-size:23px}
+      .catbtn{font-size:21px}
+      .scale button{min-height:52px}
+    }
+    @media (orientation:landscape) and (min-width:800px){
+      .app{padding:22px 28px}
+      .hero{padding:24px}
+      .grid{grid-template-columns:repeat(2,1fr)}
+      .categories{grid-template-columns:repeat(2,1fr)}
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="brand">
+      <h1>OTR Team Portal</h1>
+      <p>Communication • Feedback • Continuous Improvement</p>
+    </div>
+    <div class="pill">Prototype V0.1 • Local device storage</div>
+  </div>
+
+  <section id="home" class="screen active">
+    <div class="hero">
+      <h2>What do you need?</h2>
+      <p>Choose the fastest path. You can submit feedback in under a minute or go deeper when you have time.</p>
+    </div>
+    <div class="grid">
+      <button class="bigbtn" onclick="showScreen('categories')">
+        <strong>Feedback</strong>
+        <span>Quick, optionally anonymous feedback about any team system.</span>
+      </button>
+      <button class="bigbtn" onclick="showScreen('postevent')">
+        <strong>Post-Event Report</strong>
+        <span>Structured event notes, facts, usage, needs, and follow-up.</span>
+      </button>
+      <button class="bigbtn" onclick="showScreen('problem')">
+        <strong>Report a Problem</strong>
+        <span>Something broken, missing, unsafe, confusing, delayed, or blocked.</span>
+      </button>
+      <button class="bigbtn" onclick="showScreen('idea')">
+        <strong>Ideas / Improvements</strong>
+        <span>A better way, useful experiment, or something worth trying.</span>
+      </button>
+    </div>
+    <div class="actions">
+      <button class="secondary" onclick="showScreen('admin')">Prototype Data</button>
+    </div>
+  </section>
+
+  <section id="categories" class="screen">
+    <button class="secondary back" onclick="showScreen('home')">← Home</button>
+    <h2 class="sectiontitle">What area do you want to talk about?</h2>
+    <p class="subtitle">Pick the closest fit. “Something Else” is always available.</p>
+    <div id="categoryButtons" class="categories"></div>
+  </section>
+
+  <section id="feedback" class="screen">
+    <button class="secondary back" onclick="showScreen('categories')">← Categories</button>
+    <h2 id="feedbackTitle" class="sectiontitle">Feedback</h2>
+    <p class="subtitle">Quick submit first. The rest is optional.</p>
+
+    <div class="card">
+      <label for="quickText">Quick feedback</label>
+      <textarea id="quickText" maxlength="1200" placeholder="What happened? What did you notice? What would help?"></textarea>
+      <div class="charhint">Short and specific is perfect.</div>
+      <div class="actions">
+        <button class="primary" onclick="submitQuick()">Submit now</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="font-size:28px;margin-top:0">Go a little deeper</h3>
+      <p class="subtitle">Five short questions. Skip anything you can’t answer.</p>
+      <div id="questionWrap"></div>
+      <div class="question">
+        <label for="detailText">Anything else?</label>
+        <textarea id="detailText" maxlength="2000" placeholder="Optional details, context, or suggestion."></textarea>
+      </div>
+      <div class="question">
+        <label for="nameText">Name</label>
+        <input id="nameText" maxlength="80" placeholder="Optional — leave blank to stay anonymous" />
+      </div>
+      <div class="actions">
+        <button class="primary" onclick="submitDetailed()">Submit feedback</button>
+        <button class="secondary" onclick="showScreen('categories')">Cancel</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="postevent" class="screen">
+    <button class="secondary back" onclick="showScreen('home')">← Home</button>
+    <h2 class="sectiontitle">Post-Event Report</h2>
+    <div class="notice">V0.1 placeholder. This branch will become the 5–10 minute structured event intake after we validate the kiosk flow.</div>
+  </section>
+
+  <section id="problem" class="screen">
+    <button class="secondary back" onclick="showScreen('home')">← Home</button>
+    <h2 class="sectiontitle">Report a Problem</h2>
+    <div class="card">
+      <label for="problemText">What needs attention?</label>
+      <textarea id="problemText" placeholder="Broken, missing, unsafe, confusing, delayed, blocked..."></textarea>
+      <div class="actions"><button class="primary" onclick="genericSubmit('problemText','Problem report')">Submit</button></div>
+    </div>
+  </section>
+
+  <section id="idea" class="screen">
+    <button class="secondary back" onclick="showScreen('home')">← Home</button>
+    <h2 class="sectiontitle">Ideas / Improvements</h2>
+    <div class="card">
+      <label for="ideaText">What should we try?</label>
+      <textarea id="ideaText" placeholder="A better process, experiment, tool, layout, or idea..."></textarea>
+      <div class="actions"><button class="primary" onclick="genericSubmit('ideaText','Improvement idea')">Submit</button></div>
+    </div>
+  </section>
+
+  <section id="thanks" class="screen">
+    <div class="thankyou">
+      <h2>Thank you.</h2>
+      <p>Your input has been saved on this device for the prototype. The goal is to improve the system, not assign blame.</p>
+      <div class="actions" style="justify-content:center">
+        <button class="primary" onclick="resetAndHome()">Done</button>
+        <button class="secondary" onclick="showScreen('categories')">Add more feedback</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="admin" class="screen">
+    <button class="secondary back" onclick="showScreen('home')">← Home</button>
+    <h2 class="sectiontitle">Prototype Data</h2>
+    <p class="subtitle">For V0.1 only: submissions are stored locally in this browser.</p>
+    <div class="card">
+      <div class="actions">
+        <button class="secondary" onclick="exportData()">Export JSON</button>
+        <button class="danger" onclick="clearData()">Clear prototype data</button>
+      </div>
+      <div id="adminList" style="margin-top:18px"></div>
+    </div>
+  </section>
+</div>
+
+<script>
+const categories = [
+  "Driver Experience",
+  "Mechanical / Cars",
+  "Pit Operations",
+  "Paddock Operations",
+  "Transportation & Logistics",
+  "Hospitality & Crew Support",
+  "Shop / HQ Operations",
+  "Something Else"
+];
+
+const questions = [
+  {text:"What happened or changed?", left:"No issue", right:"Major impact"},
+  {text:"Was what you needed easy to find or understand?", left:"Very easy", right:"Very difficult"},
+  {text:"Did anything slow you down or create extra work?", left:"Not at all", right:"A lot"},
+  {text:"What worked well here?", left:"Nothing stood out", right:"Worked very well"},
+  {text:"How important is this to address or preserve?", left:"Low priority", right:"High priority"}
+];
+
+let activeCategory = "";
+let ratings = {};
+
+function showScreen(id){
+  document.querySelectorAll(".screen").forEach(x=>x.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+  window.scrollTo(0,0);
+  if(id==="admin") renderAdmin();
+}
+
+function renderCategories(){
+  const wrap=document.getElementById("categoryButtons");
+  wrap.innerHTML="";
+  categories.forEach(c=>{
+    const b=document.createElement("button");
+    b.className="catbtn";
+    b.textContent=c;
+    b.onclick=()=>openFeedback(c);
+    wrap.appendChild(b);
+  });
+}
+
+function openFeedback(category){
+  activeCategory=category;
+  ratings={};
+  document.getElementById("feedbackTitle").textContent=category;
+  document.getElementById("quickText").value="";
+  document.getElementById("detailText").value="";
+  document.getElementById("nameText").value="";
+  renderQuestions();
+  showScreen("feedback");
+}
+
+function renderQuestions(){
+  const wrap=document.getElementById("questionWrap");
+  wrap.innerHTML="";
+  questions.forEach((q,idx)=>{
+    const div=document.createElement("div");
+    div.className="question";
+    div.innerHTML=`
+      <label>${idx+1}. ${q.text}</label>
+      <div class="scale" id="scale-${idx}">
+        ${[1,2,3,4,5].map(n=>`<button type="button" onclick="setRating(${idx},${n},this)">${n}</button>`).join("")}
+      </div>
+      <div class="scalehelp"><span>${q.left}</span><span>${q.right}</span></div>
+    `;
+    wrap.appendChild(div);
+  });
+}
+
+function setRating(q,n,el){
+  ratings[q]=n;
+  document.querySelectorAll(`#scale-${q} button`).forEach(b=>b.classList.remove("selected"));
+  el.classList.add("selected");
+}
+
+function getStore(){
+  try{return JSON.parse(localStorage.getItem("otr_submissions")||"[]")}catch(e){return[]}
+}
+function saveSubmission(data){
+  const arr=getStore();
+  arr.unshift(data);
+  localStorage.setItem("otr_submissions",JSON.stringify(arr));
+}
+
+function submitQuick(){
+  const text=document.getElementById("quickText").value.trim();
+  if(!text){ alert("Type a quick note first."); return; }
+  saveSubmission({
+    id:cryptoId(), type:"feedback_quick", category:activeCategory,
+    text, timestamp:new Date().toISOString(), anonymous:true, version:"0.1"
+  });
+  showScreen("thanks");
+}
+
+function submitDetailed(){
+  const quick=document.getElementById("quickText").value.trim();
+  const detail=document.getElementById("detailText").value.trim();
+  const name=document.getElementById("nameText").value.trim();
+  saveSubmission({
+    id:cryptoId(), type:"feedback_detailed", category:activeCategory,
+    quick, ratings, detail, name:name||null, anonymous:!name,
+    timestamp:new Date().toISOString(), version:"0.1"
+  });
+  showScreen("thanks");
+}
+
+function genericSubmit(field,type){
+  const el=document.getElementById(field);
+  const text=el.value.trim();
+  if(!text){ alert("Add a short note first."); return; }
+  saveSubmission({id:cryptoId(),type,text,timestamp:new Date().toISOString(),version:"0.1"});
+  el.value="";
+  showScreen("thanks");
+}
+
+function cryptoId(){
+  return "otr-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8);
+}
+
+function resetAndHome(){
+  activeCategory="";
+  ratings={};
+  showScreen("home");
+}
+
+function renderAdmin(){
+  const arr=getStore();
+  const wrap=document.getElementById("adminList");
+  if(!arr.length){wrap.innerHTML='<p class="small">No prototype submissions yet.</p>';return;}
+  wrap.innerHTML=arr.map(x=>`
+    <div class="adminrow">
+      <div>
+        <strong>${escapeHtml(x.category||x.type)}</strong>
+        <div class="small">${new Date(x.timestamp).toLocaleString()} • ${escapeHtml((x.text||x.quick||x.detail||"").slice(0,140))}</div>
+      </div>
+      <div class="small">${x.anonymous===false ? escapeHtml(x.name||"Named") : "Anonymous"}</div>
+    </div>
+  `).join("");
+}
+
+function exportData(){
+  const data=JSON.stringify(getStore(),null,2);
+  const blob=new Blob([data],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;a.download="otr-portal-v0.1-data.json";a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),500);
+}
+
+function clearData(){
+  if(confirm("Clear all locally stored prototype submissions?")){
+    localStorage.removeItem("otr_submissions");
+    renderAdmin();
+  }
+}
+
+function escapeHtml(s){
+  return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
+}
+
+renderCategories();
+</script>
+</body>
+</html>
