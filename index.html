@@ -4,18 +4,19 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#111111" />
-  <title>OTR Team Communication Portal — V0.1</title>
+  <title>OTR Team Communication Portal — V0.2</title>
   <style>
     :root{
-      --bg:#0f1115;
-      --panel:#191d24;
-      --panel2:#222833;
-      --text:#f5f7fa;
-      --muted:#aeb7c4;
-      --accent:#ffffff;
-      --danger:#ff7a7a;
-      --ok:#9be29b;
-      --border:#343b48;
+      --bg:#f3f5f2;
+      --panel:#ffffff;
+      --panel2:#eef2ec;
+      --text:#172018;
+      --muted:#667066;
+      --accent:#b7ff22;
+      --accent-dark:#7fb500;
+      --danger:#b42318;
+      --ok:#7fb500;
+      --border:#d7ded4;
       --radius:18px;
       --gap:18px;
     }
@@ -25,6 +26,7 @@
     button,input,textarea,select{font:inherit}
     button{touch-action:manipulation}
     .app{max-width:1180px;margin:0 auto;padding:24px}
+    .app:before{content:"";display:block;height:8px;background:var(--accent);border-radius:999px;margin-bottom:18px}
     .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:22px}
     .brand h1{font-size:clamp(28px,4vw,52px);margin:0;line-height:1}
     .brand p{margin:8px 0 0;color:var(--muted);font-size:18px}
@@ -54,7 +56,7 @@
     .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:22px;margin-bottom:18px}
     label{display:block;font-size:20px;font-weight:700;margin-bottom:10px}
     textarea,input,select{
-      width:100%;background:#0b0d11;color:var(--text);border:1px solid var(--border);
+      width:100%;background:#f8faf7;color:var(--text);border:1px solid var(--border);
       border-radius:14px;padding:16px;font-size:19px;outline:none
     }
     textarea{min-height:130px;resize:vertical}
@@ -63,16 +65,16 @@
     .primary,.secondary,.danger{
       min-height:58px;border-radius:14px;padding:14px 22px;font-weight:700;font-size:19px;cursor:pointer
     }
-    .primary{background:var(--accent);color:#111;border:none}
+    .primary{background:var(--accent);color:#172018;border:2px solid var(--accent-dark)}
     .secondary{background:var(--panel2);color:var(--text);border:1px solid var(--border)}
     .danger{background:transparent;color:var(--danger);border:1px solid var(--danger)}
     .question{margin-bottom:22px}
     .scale{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin-top:12px}
     .scale button{
-      min-height:58px;border:1px solid var(--border);background:#0b0d11;color:var(--text);
+      min-height:58px;border:1px solid var(--border);background:#f8faf7;color:var(--text);
       border-radius:12px;font-size:20px;font-weight:700;cursor:pointer
     }
-    .scale button.selected{background:var(--text);color:#111}
+    .scale button.selected{background:var(--accent);color:#172018;border-color:var(--accent-dark)}
     .scalehelp{display:flex;justify-content:space-between;color:var(--muted);font-size:13px;margin-top:6px}
     .notice{border-left:5px solid var(--ok);padding:16px 18px;background:var(--panel);border-radius:12px;font-size:18px;line-height:1.4}
     .thankyou{text-align:center;padding:50px 20px}
@@ -108,7 +110,7 @@
       <h1>OTR Team Portal</h1>
       <p>Communication • Feedback • Continuous Improvement</p>
     </div>
-    <div class="pill">Prototype V0.1 • Local device storage</div>
+    <div class="pill">Prototype V0.2 • Local device storage</div>
   </div>
 
   <section id="home" class="screen active">
@@ -151,7 +153,7 @@
     <h2 id="feedbackTitle" class="sectiontitle">Feedback</h2>
     <p class="subtitle">Quick submit first. The rest is optional.</p>
 
-    <div class="card">
+    <div class="card" style="border-top:6px solid var(--accent)">
       <label for="quickText">Quick feedback</label>
       <textarea id="quickText" maxlength="1200" placeholder="What happened? What did you notice? What would help?"></textarea>
       <div class="charhint">Short and specific is perfect.</div>
@@ -243,15 +245,15 @@ const categories = [
 ];
 
 const questions = [
-  {text:"What happened or changed?", left:"No issue", right:"Major impact"},
-  {text:"Was what you needed easy to find or understand?", left:"Very easy", right:"Very difficult"},
-  {text:"Did anything slow you down or create extra work?", left:"Not at all", right:"A lot"},
-  {text:"What worked well here?", left:"Nothing stood out", right:"Worked very well"},
-  {text:"How important is this to address or preserve?", left:"Low priority", right:"High priority"}
+  "What happened or changed?",
+  "Was what you needed easy to find or understand?",
+  "Did anything slow you down or create extra work?",
+  "What worked well here?",
+  "What should we change, fix, or protect?"
 ];
 
 let activeCategory = "";
-let ratings = {};
+let answers = {};
 
 function showScreen(id){
   document.querySelectorAll(".screen").forEach(x=>x.classList.remove("active"));
@@ -274,7 +276,7 @@ function renderCategories(){
 
 function openFeedback(category){
   activeCategory=category;
-  ratings={};
+  answers={};
   document.getElementById("feedbackTitle").textContent=category;
   document.getElementById("quickText").value="";
   document.getElementById("detailText").value="";
@@ -290,20 +292,13 @@ function renderQuestions(){
     const div=document.createElement("div");
     div.className="question";
     div.innerHTML=`
-      <label>${idx+1}. ${q.text}</label>
-      <div class="scale" id="scale-${idx}">
-        ${[1,2,3,4,5].map(n=>`<button type="button" onclick="setRating(${idx},${n},this)">${n}</button>`).join("")}
-      </div>
-      <div class="scalehelp"><span>${q.left}</span><span>${q.right}</span></div>
+      <label for="q-${idx}">${idx+1}. ${q}</label>
+      <textarea id="q-${idx}" maxlength="1200"
+        placeholder="Optional — add what you know, noticed, needed, or want preserved."
+        oninput="answers[${idx}]=this.value"></textarea>
     `;
     wrap.appendChild(div);
   });
-}
-
-function setRating(q,n,el){
-  ratings[q]=n;
-  document.querySelectorAll(`#scale-${q} button`).forEach(b=>b.classList.remove("selected"));
-  el.classList.add("selected");
 }
 
 function getStore(){
@@ -320,7 +315,7 @@ function submitQuick(){
   if(!text){ alert("Type a quick note first."); return; }
   saveSubmission({
     id:cryptoId(), type:"feedback_quick", category:activeCategory,
-    text, timestamp:new Date().toISOString(), anonymous:true, version:"0.1"
+    text, timestamp:new Date().toISOString(), anonymous:true, version:"0.2"
   });
   showScreen("thanks");
 }
@@ -331,8 +326,8 @@ function submitDetailed(){
   const name=document.getElementById("nameText").value.trim();
   saveSubmission({
     id:cryptoId(), type:"feedback_detailed", category:activeCategory,
-    quick, ratings, detail, name:name||null, anonymous:!name,
-    timestamp:new Date().toISOString(), version:"0.1"
+    quick, answers, detail, name:name||null, anonymous:!name,
+    timestamp:new Date().toISOString(), version:"0.2"
   });
   showScreen("thanks");
 }
@@ -341,7 +336,7 @@ function genericSubmit(field,type){
   const el=document.getElementById(field);
   const text=el.value.trim();
   if(!text){ alert("Add a short note first."); return; }
-  saveSubmission({id:cryptoId(),type,text,timestamp:new Date().toISOString(),version:"0.1"});
+  saveSubmission({id:cryptoId(),type,text,timestamp:new Date().toISOString(),version:"0.2"});
   el.value="";
   showScreen("thanks");
 }
@@ -352,7 +347,7 @@ function cryptoId(){
 
 function resetAndHome(){
   activeCategory="";
-  ratings={};
+  answers={};
   showScreen("home");
 }
 
