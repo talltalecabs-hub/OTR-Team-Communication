@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#111111" />
-  <title>OTR Team Communication Portal — V0.2.2</title>
+  <title>OTR Team Communication Portal — V0.3</title>
   <style>
     :root{
       --bg:#f3f5f2;
@@ -110,7 +110,7 @@
       <h1>OTR Team Portal</h1>
       <p>Communication • Feedback • Continuous Improvement</p>
     </div>
-    <div class="pill">Prototype V0.2.2 • Local device storage</div>
+    <div class="pill">Prototype V0.3 • Shared database + offline queue</div>
   </div>
 
   <section id="home" class="screen active">
@@ -138,7 +138,7 @@
       </button>
     </div>
     <div class="actions">
-      <button class="secondary" onclick="showScreen('admin')">Prototype Data</button>
+      <button class="secondary" onclick="showScreen('admin')">Local Queue</button>
     </div>
   </section>
 
@@ -212,6 +212,7 @@
     <div class="thankyou">
       <h2>Thank you.</h2>
       <p>Thank you for helping us build a winning team. If you provided a name, we may reach out to you.</p>
+      <p id="submitStatus" class="small" style="margin-top:12px"></p>
       <div class="actions" style="justify-content:center">
         <button class="primary" onclick="resetAndHome()">Done</button>
         <button class="secondary" onclick="showScreen('categories')">Add more feedback</button>
@@ -221,12 +222,12 @@
 
   <section id="admin" class="screen">
     <button class="secondary back" onclick="showScreen('home')">← Home</button>
-    <h2 class="sectiontitle">Prototype Data</h2>
-    <p class="subtitle">For V0.1 only: submissions are stored locally in this browser.</p>
+    <h2 class="sectiontitle">Local Queue</h2>
+    <p class="subtitle">Submissions normally go to the shared OTR database. Anything listed here is waiting to sync from this device.</p>
     <div class="card">
       <div class="actions">
-        <button class="secondary" onclick="exportData()">Export JSON</button>
-        <button class="danger" onclick="clearData()">Clear prototype data</button>
+        <button class="secondary" onclick="exportData()">Export local queue</button>
+        <button class="danger" onclick="clearData()">Clear local queue</button>
       </div>
       <div id="adminList" style="margin-top:18px"></div>
     </div>
@@ -305,57 +306,28 @@ function renderQuestions(){
 function getStore(){
   try{return JSON.parse(localStorage.getItem("otr_submissions")||"[]")}catch(e){return[]}
 }
-function saveSubmission(data){
-  const arr=getStore();
-  arr.unshift(data);
-  localStorage.setItem("otr_submissions",JSON.stringify(arr));
+function setStore(arr){localStorage.setItem("otr_submissions",JSON.stringify(arr));}
+function queueSubmission(data){const arr=getStore();arr.unshift(data);setStore(arr);}
+const SUPABASE_URL="https://dsikfwheepvwerswmfmr.supabase.co";
+const SUPABASE_KEY="sb_publishable_rSZ1cCRX8s4PHOqxQbNoow_qspBNY6z";
+function toDatabaseRow(data){return {submission_type:data.type||"feedback",category:data.category||null,quick_feedback:data.text||data.quick||null,answers:data.answers||null,additional_details:data.detail||null,submitted_name:data.name||null,anonymous:data.anonymous!==false,app_version:"0.3",source:"web"};}
+async function sendToSupabase(data){
+  const response=await fetch(`${SUPABASE_URL}/rest/v1/submissions`,{method:"POST",headers:{"apikey":SUPABASE_KEY,"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(toDatabaseRow(data))});
+  if(!response.ok){let msg="";try{msg=await response.text();}catch(e){};throw new Error(`Supabase insert failed: ${response.status} ${msg}`);}
+  return true;
 }
-
-function submitQuick(){
-  const text=document.getElementById("quickText").value.trim();
-  if(!text){ alert("Type a quick note first."); return; }
-  saveSubmission({
-    id:cryptoId(), type:"feedback_quick", category:activeCategory,
-    text, timestamp:new Date().toISOString(), anonymous:true, version:"0.2"
-  });
-  showScreen("thanks");
-}
-
-function submitDetailed(){
-  const quick=document.getElementById("quickText").value.trim();
-  const detail=document.getElementById("detailText").value.trim();
-  const name=document.getElementById("nameText").value.trim();
-  saveSubmission({
-    id:cryptoId(), type:"feedback_detailed", category:activeCategory,
-    quick, answers, detail, name:name||null, anonymous:!name,
-    timestamp:new Date().toISOString(), version:"0.2"
-  });
-  showScreen("thanks");
-}
-
-function genericSubmit(field,type){
-  const el=document.getElementById(field);
-  const text=el.value.trim();
-  if(!text){ alert("Add a short note first."); return; }
-  saveSubmission({id:cryptoId(),type,text,timestamp:new Date().toISOString(),version:"0.2"});
-  el.value="";
-  showScreen("thanks");
-}
-
-function cryptoId(){
-  return "otr-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8);
-}
-
-function resetAndHome(){
-  activeCategory="";
-  answers={};
-  showScreen("home");
-}
-
+function setSubmitStatus(message,queued=false){const el=document.getElementById("submitStatus");if(!el)return;el.textContent=message;el.style.color=queued?"#8a5b00":"var(--ok)";}
+async function submitData(data){try{await sendToSupabase(data);setSubmitStatus("Submitted to the shared OTR database.");return "remote";}catch(err){console.warn(err);queueSubmission(data);setSubmitStatus("Connection unavailable. Saved safely on this device and will retry automatically.",true);return "queued";}}
+async function syncQueue(){const arr=getStore();if(!arr.length)return;const remaining=[];for(const item of arr){try{await sendToSupabase(item);}catch(err){remaining.push(item);}}setStore(remaining);if(document.getElementById("admin").classList.contains("active"))renderAdmin();}
+async function submitQuick(){const text=document.getElementById("quickText").value.trim();if(!text){alert("Type a quick note first.");return;}const data={id:cryptoId(),type:"feedback_quick",category:activeCategory,text,timestamp:new Date().toISOString(),anonymous:true,version:"0.3"};showScreen("thanks");setSubmitStatus("Submitting…");await submitData(data);}
+async function submitDetailed(){const quick=document.getElementById("quickText").value.trim();const detail=document.getElementById("detailText").value.trim();const name=document.getElementById("nameText").value.trim();const data={id:cryptoId(),type:"feedback_detailed",category:activeCategory,quick,answers,detail,name:name||null,anonymous:!name,timestamp:new Date().toISOString(),version:"0.3"};showScreen("thanks");setSubmitStatus("Submitting…");await submitData(data);}
+async function genericSubmit(field,type){const el=document.getElementById(field);const text=el.value.trim();if(!text){alert("Add a short note first.");return;}const data={id:cryptoId(),type,text,timestamp:new Date().toISOString(),anonymous:true,version:"0.3"};el.value="";showScreen("thanks");setSubmitStatus("Submitting…");await submitData(data);}
+function cryptoId(){return "otr-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8);}
+function resetAndHome(){activeCategory="";answers={};showScreen("home");}
 function renderAdmin(){
   const arr=getStore();
   const wrap=document.getElementById("adminList");
-  if(!arr.length){wrap.innerHTML='<p class="small">No prototype submissions yet.</p>';return;}
+  if(!arr.length){wrap.innerHTML='<p class="small">No submissions are waiting to sync.</p>';return;}
   wrap.innerHTML=arr.map(x=>`
     <div class="adminrow">
       <div>
@@ -377,7 +349,7 @@ function exportData(){
 }
 
 function clearData(){
-  if(confirm("Clear all locally stored prototype submissions?")){
+  if(confirm("Clear all submissions waiting to sync from this device? This cannot be undone.")){
     localStorage.removeItem("otr_submissions");
     renderAdmin();
   }
@@ -388,6 +360,8 @@ function escapeHtml(s){
 }
 
 renderCategories();
+syncQueue();
+window.addEventListener("online", syncQueue);
 </script>
 </body>
 </html>
