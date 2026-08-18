@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#111111" />
-  <title>OTR Team Communication Portal — V0.3.2</title>
+  <title>OTR Communications Portal — V0.3.3</title>
   <style>
     :root{
       --bg:#f3f5f2;
@@ -27,6 +27,115 @@
     button{touch-action:manipulation}
     .app{max-width:1180px;margin:0 auto;padding:24px}
     .app:before{content:"";display:block;height:8px;background:var(--accent);border-radius:999px;margin-bottom:18px}
+
+    .brand h1{letter-spacing:-0.03em}
+    .brand p{font-weight:700}
+    .home-intro{
+      position:relative;
+      overflow:hidden;
+      padding:8px 4px 12px;
+      margin-bottom:8px;
+    }
+    .home-intro:after{
+      content:"";
+      position:absolute;
+      right:-36px;
+      top:-28px;
+      width:150px;
+      height:150px;
+      opacity:.16;
+      transform:rotate(18deg);
+      background:
+        repeating-linear-gradient(
+          135deg,
+          var(--accent) 0 10px,
+          transparent 10px 20px
+        );
+      pointer-events:none;
+    }
+    .home-intro h2{
+      font-size:clamp(24px,3vw,38px);
+      margin:4px 0 6px;
+      position:relative;
+      z-index:1;
+    }
+    .home-intro p{
+      font-size:clamp(16px,2vw,19px);
+      margin:0;
+      max-width:780px;
+      position:relative;
+      z-index:1;
+    }
+    .eyebrow{
+      display:inline-block;
+      font-weight:900;
+      font-size:13px;
+      letter-spacing:.16em;
+      padding:7px 10px;
+      border-left:5px solid var(--accent-dark);
+      background:var(--panel2);
+      border-radius:8px;
+      position:relative;
+      z-index:1;
+    }
+    #home .grid{
+      margin-top:10px;
+    }
+    #home .bigbtn{
+      position:relative;
+      overflow:hidden;
+      border:2px solid var(--border);
+      box-shadow:0 7px 18px rgba(20,32,24,.08);
+      transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+    }
+    #home .bigbtn:before{
+      content:"";
+      position:absolute;
+      left:0;
+      top:0;
+      bottom:0;
+      width:8px;
+      background:var(--accent);
+    }
+    #home .bigbtn:after{
+      content:"→";
+      position:absolute;
+      right:20px;
+      top:50%;
+      transform:translateY(-50%);
+      font-size:30px;
+      font-weight:900;
+      color:var(--accent-dark);
+    }
+    #home .bigbtn strong,
+    #home .bigbtn span{
+      padding-right:42px;
+    }
+    #home .bigbtn:hover{
+      border-color:var(--accent-dark);
+      box-shadow:0 10px 24px rgba(20,32,24,.12);
+    }
+    #home .bigbtn:active{
+      transform:translateY(1px) scale(.995);
+    }
+    #home .bigbtn:nth-child(2n){
+      background:
+        linear-gradient(180deg, rgba(183,255,34,.05), rgba(255,255,255,0)),
+        var(--panel);
+    }
+    .brand{
+      position:relative;
+    }
+    .brand:after{
+      content:"";
+      display:block;
+      width:74px;
+      height:5px;
+      background:var(--accent);
+      border-radius:999px;
+      margin-top:10px;
+    }
+
     .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:22px}
     .brand h1{font-size:clamp(28px,4vw,52px);margin:0;line-height:1}
     .brand p{margin:8px 0 0;color:var(--muted);font-size:18px}
@@ -86,12 +195,20 @@
     .back{margin-bottom:18px}
     .hidden{display:none !important}
     @media (max-width:720px){
-      .app{padding:16px}
+      .app{padding:14px}
       .grid,.categories{grid-template-columns:1fr}
-      .topbar{align-items:flex-start}
+      .topbar{align-items:flex-start;margin-bottom:12px}
+      .brand h1{font-size:30px}
+      .brand p{font-size:15px;margin-top:6px}
+      .brand:after{margin-top:8px}
       .pill{display:none}
-      .bigbtn{min-height:102px}
-      .bigbtn strong{font-size:23px}
+      .home-intro{padding:4px 2px 10px}
+      .home-intro h2{font-size:26px;margin:2px 0 5px}
+      .home-intro p{font-size:16px;line-height:1.35}
+      .eyebrow{font-size:11px;padding:5px 8px}
+      .bigbtn{min-height:92px;padding:18px 20px}
+      .bigbtn strong{font-size:22px}
+      .bigbtn span{font-size:15px}
       .catbtn{font-size:21px}
       .scale button{min-height:52px}
     }
@@ -107,17 +224,17 @@
 <div class="app">
   <div class="topbar">
     <div class="brand">
-      <h1>OTR Team Portal</h1>
-      <p>Communication • Feedback • Continuous Improvement</p>
+      <h1>OTR Communications Portal</h1>
+      <p>Building winning systems with winning people.</p>
     </div>
-    <div class="pill">Prototype V0.3.2 • Shared database + offline queue</div>
+    <div class="pill">Prototype V0.3.3 • Shared database + offline queue</div>
   </div>
 
   <section id="home" class="screen active">
-    <div class="hero">
-      <h2>Welcome to OTR Team Communications. Please choose a path below.</h2>
+    <div class="hero home-intro">
+      <div class="eyebrow">TEAM COMMUNICATIONS</div>
+      <h2>What would you like to do?</h2>
       <p>You can submit feedback in under a minute or go deeper when you have time.</p>
-      <p style="margin-top:12px;font-weight:700;color:var(--text)">Help us improve the system, not blame the person. Focus on what happened, what worked, and what could work better.</p>
     </div>
     <div class="grid">
       <button class="bigbtn" onclick="showScreen('categories')">
@@ -139,7 +256,7 @@
     </div>
 
     <div style="margin-top:22px">
-      <button class="bigbtn" onclick="showScreen('driversLounge')" style="border:2px solid var(--accent-dark)">
+      <button class="bigbtn" onclick="showScreen('driversLounge')" style="border:2px solid var(--accent-dark);background:linear-gradient(135deg, rgba(183,255,34,.12), rgba(255,255,255,0) 55%), var(--panel)">
         <strong>Driver’s Lounge</strong>
         <span>Pre-stint check-in, post-stint debrief, and driver-specific feedback. Coming next.</span>
       </button>
@@ -348,7 +465,7 @@ function setStore(arr){localStorage.setItem("otr_submissions",JSON.stringify(arr
 function queueSubmission(data){const arr=getStore();arr.unshift(data);setStore(arr);}
 const SUPABASE_URL="https://dsikfwheepvwerswmfmr.supabase.co";
 const SUPABASE_KEY="sb_publishable_rSZ1cCRX8s4PHOqxQbNoow_qspBNY6z";
-function toDatabaseRow(data){return {submission_type:data.type||"feedback",category:data.category||null,quick_feedback:data.text||data.quick||null,answers:data.answers||null,additional_details:data.detail||null,submitted_name:data.name||null,anonymous:data.anonymous!==false,app_version:"0.3.2",source:"web"};}
+function toDatabaseRow(data){return {submission_type:data.type||"feedback",category:data.category||null,quick_feedback:data.text||data.quick||null,answers:data.answers||null,additional_details:data.detail||null,submitted_name:data.name||null,anonymous:data.anonymous!==false,app_version:"0.3.3",source:"web"};}
 async function sendToSupabase(data){
   const response=await fetch(`${SUPABASE_URL}/rest/v1/submissions`,{method:"POST",headers:{"apikey":SUPABASE_KEY,"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(toDatabaseRow(data))});
   if(!response.ok){let msg="";try{msg=await response.text();}catch(e){};throw new Error(`Supabase insert failed: ${response.status} ${msg}`);}
@@ -357,10 +474,10 @@ async function sendToSupabase(data){
 function setSubmitStatus(message,queued=false){const el=document.getElementById("submitStatus");if(!el)return;el.textContent=message;el.style.color=queued?"#8a5b00":"var(--ok)";}
 async function submitData(data){try{await sendToSupabase(data);setSubmitStatus("Submitted to the shared OTR database.");return "remote";}catch(err){console.warn(err);queueSubmission(data);setSubmitStatus("Connection unavailable. Saved safely on this device and will retry automatically.",true);return "queued";}}
 async function syncQueue(){const arr=getStore();if(!arr.length)return;const remaining=[];for(const item of arr){try{await sendToSupabase(item);}catch(err){remaining.push(item);}}setStore(remaining);if(document.getElementById("admin").classList.contains("active"))renderAdmin();}
-async function submitQuick(){const text=document.getElementById("quickText").value.trim();if(!text){alert("Type a quick note first.");return;}const data={id:cryptoId(),type:"feedback_quick",category:activeCategory,text,timestamp:new Date().toISOString(),anonymous:true,version:"0.3.2"};showScreen("thanks");setSubmitStatus("Submitting…");await submitData(data);}
+async function submitQuick(){const text=document.getElementById("quickText").value.trim();if(!text){alert("Type a quick note first.");return;}const data={id:cryptoId(),type:"feedback_quick",category:activeCategory,text,timestamp:new Date().toISOString(),anonymous:true,version:"0.3.3"};showScreen("thanks");setSubmitStatus("Submitting…");await submitData(data);}
 async function submitDetailed(){const quick=document.getElementById("quickText").value.trim();const detail=document.getElementById("detailText").value.trim();const name=document.getElementById("nameText").value.trim();
-  const followUpOk=document.getElementById("followUpOk").checked;const data={id:cryptoId(),type:"feedback_detailed",category:activeCategory,quick,answers,detail,name:name||null,anonymous:!name,timestamp:new Date().toISOString(),version:"0.3.2"};showScreen("thanks");setSubmitStatus("Submitting…");await submitData(data);}
-async function genericSubmit(field,type){const el=document.getElementById(field);const text=el.value.trim();if(!text){alert("Add a short note first.");return;}const data={id:cryptoId(),type,text,timestamp:new Date().toISOString(),anonymous:true,version:"0.3.2"};el.value="";showScreen("thanks");setSubmitStatus("Submitting…");await submitData(data);}
+  const followUpOk=document.getElementById("followUpOk").checked;const data={id:cryptoId(),type:"feedback_detailed",category:activeCategory,quick,answers,detail,name:name||null,anonymous:!name,timestamp:new Date().toISOString(),version:"0.3.3"};showScreen("thanks");setSubmitStatus("Submitting…");await submitData(data);}
+async function genericSubmit(field,type){const el=document.getElementById(field);const text=el.value.trim();if(!text){alert("Add a short note first.");return;}const data={id:cryptoId(),type,text,timestamp:new Date().toISOString(),anonymous:true,version:"0.3.3"};el.value="";showScreen("thanks");setSubmitStatus("Submitting…");await submitData(data);}
 function cryptoId(){return "otr-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8);}
 function resetAndHome(){activeCategory="";answers={};showScreen("home");}
 function renderAdmin(){
