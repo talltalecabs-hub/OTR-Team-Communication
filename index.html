@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#111111" />
-  <title>OTR Communications Portal — V0.4.2</title>
+  <title>OTR Communications Portal — V0.4.3</title>
   <style>
     :root{
       --bg:#f3f5f2;
@@ -379,7 +379,7 @@
       <h1>OTR Communications Portal</h1>
       <p>Building winning systems with winning people.</p>
     </div>
-    <div class="pill">Prototype V0.4.2 • Shared database + offline queue</div>
+    <div class="pill">Prototype V0.4.3 • Shared database + offline queue</div>
   </div>
 
   <section id="home" class="screen active">
@@ -688,7 +688,7 @@
     <div class="card">
       <label for="problemText">What needs attention?</label>
       <textarea id="problemText" placeholder="Broken, missing, unsafe, confusing, delayed, blocked..."></textarea>
-      <div class="actions"><button class="primary" onclick="genericSubmit('problemText','Problem report')">Submit</button></div>
+      <div class="actions"><button type="button" class="primary" onclick="genericSubmit('problemText','Problem report')">Submit</button></div>
     </div>
   </section>
 
@@ -722,7 +722,7 @@
       <label for="wishlistText">What belongs on the list?</label>
       <textarea id="wishlistText" maxlength="1600" placeholder="Dear OTR Santa..."></textarea>
       <div class="actions">
-        <button class="primary" onclick="genericSubmit('wishlistText','Team Wishlist')">Add to Wishlist</button>
+        <button type="button" class="primary" onclick="genericSubmit('wishlistText','Team Wishlist')">Add to Wishlist</button>
       </div>
     </div>
     <p class="small" style="text-align:center">No promises. Dream responsibly. 🏁</p>
@@ -841,89 +841,12 @@ function setSubmitStatus(message,queued=false){const el=document.getElementById(
 async function submitData(data){try{await sendToSupabase(data);setSubmitStatus("Submitted to the shared OTR database.");return "remote";}catch(err){console.warn(err);queueSubmission(data);setSubmitStatus("Connection unavailable. Saved safely on this device and will retry automatically.",true);return "queued";}}
 async function syncQueue(){const arr=getStore();if(!arr.length)return;const remaining=[];for(const item of arr){try{await sendToSupabase(item);}catch(err){remaining.push(item);}}setStore(remaining);if(document.getElementById("admin").classList.contains("active"))renderAdmin();}
 async function submitQuick(){
-  const wishBtn=document.getElementById("wishlistAfterIdea");
-  if(wishBtn) wishBtn.classList.add("hidden");const text=document.getElementById("quickText").value.trim();if(!text){alert("Type a quick note first.");return;}const data={id:cryptoId(),type:"feedback_quick",category:activeCategory,text,timestamp:new Date().toISOString(),anonymous:true,version:"0.3.6"};showScreen("thanks");setSubmitStatus("Submitting…");await submitData(data);}
-async function submitDetailed(){
-  const wishBtn=document.getElementById("wishlistAfterIdea");
   if(wishBtn) wishBtn.classList.add("hidden");const quick=document.getElementById("quickText").value.trim();const detail=document.getElementById("detailText").value.trim();const name=document.getElementById("nameText").value.trim();
   const followUpOk=document.getElementById("followUpOk").checked;const data={id:cryptoId(),type:"feedback_detailed",category:activeCategory,quick,answers,detail,name:name||null,anonymous:!name,timestamp:new Date().toISOString(),version:"0.3.6"};showScreen("thanks");setSubmitStatus("Submitting…");await submitData(data);}
 
 
 
 
-async function submitIdea(event){
-  if(event && typeof event.preventDefault==="function") event.preventDefault();
-
-  const el=document.getElementById("ideaText");
-  const errorEl=document.getElementById("ideaError");
-  const submitBtn=document.getElementById("ideaSubmitButton");
-
-  if(errorEl){
-    errorEl.style.display="none";
-    errorEl.textContent="";
-  }
-  if(!el) return false;
-
-  const text=el.value.trim();
-  if(!text){
-    if(errorEl){
-      errorEl.textContent="Add an idea before submitting.";
-      errorEl.style.display="block";
-    }
-    el.focus();
-    return false;
-  }
-
-  if(submitBtn){
-    submitBtn.disabled=true;
-    submitBtn.textContent="Submitting…";
-  }
-
-  const data={
-    id:cryptoId(),
-    type:"Improvement idea",
-    text,
-    timestamp:new Date().toISOString(),
-    anonymous:true,
-    version:"0.4.2"
-  };
-
-  try{
-    localStorage.setItem("otr_wishlist_unlocked","true");
-  }catch(e){
-    console.warn("Wishlist unlock could not be persisted.",e);
-  }
-
-  try{
-    await submitData(data);
-
-    el.value="";
-    showScreen("thanks");
-
-    const wishBtn=document.getElementById("wishlistAfterIdea");
-    if(wishBtn) wishBtn.classList.remove("hidden");
-
-    setSubmitStatus("Submitted to the shared OTR database.");
-    return false;
-  }catch(err){
-    console.error("Idea submission failed:",err);
-
-    // submitData normally queues failed network attempts. Keep UX usable regardless.
-    el.value="";
-    showScreen("thanks");
-
-    const wishBtn=document.getElementById("wishlistAfterIdea");
-    if(wishBtn) wishBtn.classList.remove("hidden");
-
-    setSubmitStatus("Saved safely on this device and will retry automatically.",true);
-    return false;
-  }finally{
-    if(submitBtn){
-      submitBtn.disabled=false;
-      submitBtn.textContent="Submit Idea";
-    }
-  }
-}
 
 async function genericSubmit(field,type){
   const el=document.getElementById(field);
@@ -931,17 +854,25 @@ async function genericSubmit(field,type){
   if(!text){ alert("Add a short note first."); return; }
   const data={
     id:cryptoId(), type, text,
-    timestamp:new Date().toISOString(), anonymous:true, version:"0.4.2"
+    timestamp:new Date().toISOString(), anonymous:true, version:"0.4.3"
   };
 
   el.value="";
   showScreen("thanks");
 
-  const wishBtn=document.getElementById("wishlistAfterIdea");
-  if(wishBtn) wishBtn.classList.toggle("hidden", type!=="Improvement idea");
-
   setSubmitStatus("Submitting…");
   await submitData(data);
+}
+
+
+function cryptoId(){
+  return "otr-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8);
+}
+
+function resetAndHome(){
+  activeCategory="";
+  answers={};
+  showScreen("home");
 }
 
 function exportData(){
@@ -1238,6 +1169,12 @@ async function addInventoryItem(){
 }
 
 renderCategories();
+
+console.info("OTR portal V0.4.3 runtime check", {
+  cryptoId: typeof cryptoId,
+  resetAndHome: typeof resetAndHome,
+  genericSubmit: typeof genericSubmit
+});
 
 syncQueue();
 window.addEventListener("online", syncQueue);
