@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#111111" />
-  <title>OTR Communications Portal — V0.4.3</title>
+  <title>OTR Communications Portal — V0.4.4</title>
   <style>
     :root{
       --bg:#f3f5f2;
@@ -379,7 +379,7 @@
       <h1>OTR Communications Portal</h1>
       <p>Building winning systems with winning people.</p>
     </div>
-    <div class="pill">Prototype V0.4.3 • Shared database + offline queue</div>
+    <div class="pill">Prototype V0.4.4 • Shared database + offline queue</div>
   </div>
 
   <section id="home" class="screen active">
@@ -443,7 +443,7 @@
       <textarea id="quickText" maxlength="1200" placeholder="What happened? What did you notice? What would help?"></textarea>
       <div class="charhint">Short and specific is perfect.</div>
       <div class="actions">
-        <button class="primary" onclick="submitQuick()">Submit now</button>
+        <button type="button" class="primary" onclick="submitQuick()">Submit now</button>
       </div>
     </div>
 
@@ -464,7 +464,7 @@
         <label for="followUpOk" style="margin:0;font-size:18px">Is it okay for us to follow up with you about this?</label>
       </div>
       <div class="actions">
-        <button class="primary" onclick="submitDetailed()">Submit feedback</button>
+        <button type="button" class="primary" onclick="submitDetailed()">Submit feedback</button>
         <button class="secondary" onclick="showScreen('categories')">Cancel</button>
       </div>
     </div>
@@ -734,7 +734,7 @@
       <p>Thank you for helping us build a winning team. If you provided a name, we may reach out to you.</p>
       <p id="submitStatus" class="small" style="margin-top:12px"></p>
       <div class="actions" style="justify-content:center">
-        <button class="primary" onclick="resetAndHome()">Done</button>
+        <button type="button" class="primary" onclick="resetAndHome()">Done</button>
         <button class="secondary" onclick="showScreen('categories')">Add more feedback</button>
       </div>
     </div>
@@ -831,7 +831,7 @@ function setStore(arr){localStorage.setItem("otr_submissions",JSON.stringify(arr
 function queueSubmission(data){const arr=getStore();arr.unshift(data);setStore(arr);}
 const SUPABASE_URL="https://dsikfwheepvwerswmfmr.supabase.co";
 const SUPABASE_KEY="sb_publishable_rSZ1cCRX8s4PHOqxQbNoow_qspBNY6z";
-function toDatabaseRow(data){return {submission_type:data.type||"feedback",category:data.category||null,quick_feedback:data.text||data.quick||null,answers:data.answers||null,additional_details:data.detail||null,submitted_name:data.name||null,anonymous:data.anonymous!==false,app_version:"0.3.6",source:"web"};}
+function toDatabaseRow(data){return {submission_type:data.type||"feedback",category:data.category||null,quick_feedback:data.text||data.quick||null,answers:data.answers||null,additional_details:data.detail||null,submitted_name:data.name||null,anonymous:data.anonymous!==false,app_version:"0.4.4",source:"web"};}
 async function sendToSupabase(data){
   const response=await fetch(`${SUPABASE_URL}/rest/v1/submissions`,{method:"POST",headers:{"apikey":SUPABASE_KEY,"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(toDatabaseRow(data))});
   if(!response.ok){let msg="";try{msg=await response.text();}catch(e){};throw new Error(`Supabase insert failed: ${response.status} ${msg}`);}
@@ -841,8 +841,12 @@ function setSubmitStatus(message,queued=false){const el=document.getElementById(
 async function submitData(data){try{await sendToSupabase(data);setSubmitStatus("Submitted to the shared OTR database.");return "remote";}catch(err){console.warn(err);queueSubmission(data);setSubmitStatus("Connection unavailable. Saved safely on this device and will retry automatically.",true);return "queued";}}
 async function syncQueue(){const arr=getStore();if(!arr.length)return;const remaining=[];for(const item of arr){try{await sendToSupabase(item);}catch(err){remaining.push(item);}}setStore(remaining);if(document.getElementById("admin").classList.contains("active"))renderAdmin();}
 async function submitQuick(){
-  if(wishBtn) wishBtn.classList.add("hidden");const quick=document.getElementById("quickText").value.trim();const detail=document.getElementById("detailText").value.trim();const name=document.getElementById("nameText").value.trim();
-  const followUpOk=document.getElementById("followUpOk").checked;const data={id:cryptoId(),type:"feedback_detailed",category:activeCategory,quick,answers,detail,name:name||null,anonymous:!name,timestamp:new Date().toISOString(),version:"0.3.6"};showScreen("thanks");setSubmitStatus("Submitting…");await submitData(data);}
+  const quick=document.getElementById("quickText").value.trim();const detail=document.getElementById("detailText").value.trim();const name=document.getElementById("nameText").value.trim();
+  const followUpOk=document.getElementById("followUpOk").checked;const data={id:cryptoId(),type:"feedback_detailed",category:activeCategory,quick,answers,detail,name:name||null,anonymous:!name,timestamp:new Date().toISOString(),version:"0.4.4"};showScreen("thanks");setSubmitStatus("Submitting…");await submitData(data);}
+
+async function submitDetailed(){
+  return submitQuick();
+}
 
 
 
@@ -854,7 +858,7 @@ async function genericSubmit(field,type){
   if(!text){ alert("Add a short note first."); return; }
   const data={
     id:cryptoId(), type, text,
-    timestamp:new Date().toISOString(), anonymous:true, version:"0.4.3"
+    timestamp:new Date().toISOString(), anonymous:true, version:"0.4.4"
   };
 
   el.value="";
@@ -893,6 +897,29 @@ function clearData(){
 
 function escapeHtml(s){
   return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
+}
+
+function renderAdmin(){
+  const list=document.getElementById("adminList");
+  if(!list) return;
+  const arr=getStore();
+  if(!arr.length){
+    list.innerHTML=`<p class="small">Nothing queued — everything has synced to the shared database.</p>`;
+    return;
+  }
+  list.innerHTML=arr.map(item=>{
+    const label=escapeHtml(item.type||item.category||"Submission");
+    const body=escapeHtml(item.text||item.quick||item.detail||"(no text)");
+    const when=item.timestamp?new Date(item.timestamp).toLocaleString():"";
+    return `<div class="adminrow">
+      <div>
+        <strong>${label}</strong>
+        <div class="small">${body}</div>
+        <div class="small">${escapeHtml(when)}</div>
+      </div>
+      <span class="pill">Queued</span>
+    </div>`;
+  }).join("");
 }
 
 
@@ -1170,7 +1197,17 @@ async function addInventoryItem(){
 
 renderCategories();
 
-console.info("OTR portal V0.4.3 runtime check", {
+console.info("OTR portal V0.4.4 submission runtime check", {
+  submitQuick: typeof submitQuick,
+  submitDetailed: typeof submitDetailed,
+  genericSubmit: typeof genericSubmit,
+  renderAdmin: typeof renderAdmin,
+  cryptoId: typeof cryptoId,
+  resetAndHome: typeof resetAndHome,
+  sendToSupabase: typeof sendToSupabase
+});
+
+console.info("OTR portal V0.4.4 runtime check", {
   cryptoId: typeof cryptoId,
   resetAndHome: typeof resetAndHome,
   genericSubmit: typeof genericSubmit
