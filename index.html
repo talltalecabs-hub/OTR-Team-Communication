@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#111111" />
-  <title>OTR Communications Portal — V0.3.8</title>
+  <title>OTR Communications Portal — V0.3.9</title>
   <style>
     :root{
       --bg:#f3f5f2;
@@ -247,7 +247,7 @@
       <h1>OTR Communications Portal</h1>
       <p>Building winning systems with winning people.</p>
     </div>
-    <div class="pill">Prototype V0.3.8 • Shared database + offline queue</div>
+    <div class="pill">Prototype V0.3.9 • Shared database + offline queue</div>
   </div>
 
   <section id="home" class="screen active">
@@ -414,7 +414,7 @@
     <div class="card">
       <label for="ideaText">What should we try?</label>
       <textarea id="ideaText" placeholder="A better process, experiment, tool, layout, or idea..."></textarea>
-      <div class="actions"><button class="primary" onclick="genericSubmit('ideaText','Improvement idea')">Submit</button></div>
+      <div class="actions"><button type="button" class="primary" onclick="submitIdea()">Submit</button></div>
     </div>
 
     <button id="wishlistUnlock" class="bigbtn wishlist-egg" onclick="handleWishlistEntry()">
@@ -566,7 +566,7 @@ async function submitDetailed(){
 function updateWishlistButton(){
   const egg=document.getElementById("wishlistUnlock");
   if(!egg) return;
-  const unlocked=sessionStorage.getItem("otr_wishlist_unlocked")==="true";
+  const unlocked=localStorage.getItem("otr_wishlist_unlocked")==="true";
   const strong=egg.querySelector("strong");
   const span=egg.querySelector("span");
   if(unlocked){
@@ -579,13 +579,58 @@ function updateWishlistButton(){
 }
 
 function handleWishlistEntry(){
-  const unlocked=sessionStorage.getItem("otr_wishlist_unlocked")==="true";
+  const unlocked=localStorage.getItem("otr_wishlist_unlocked")==="true";
   if(unlocked){
     showScreen("wishlist");
   }else{
     const ideaBox=document.getElementById("ideaText");
     if(ideaBox) ideaBox.focus();
     alert("Submit an idea first to unlock the Team Wishlist.");
+    if(ideaBox) ideaBox.scrollIntoView({behavior:"smooth",block:"center"});
+  }
+}
+
+
+async function submitIdea(){
+  const el=document.getElementById("ideaText");
+  if(!el) return;
+
+  const text=el.value.trim();
+  if(!text){
+    alert("Add an idea first.");
+    el.focus();
+    return;
+  }
+
+  const data={
+    id:cryptoId(),
+    type:"Improvement idea",
+    text,
+    timestamp:new Date().toISOString(),
+    anonymous:true,
+    version:"0.3.9"
+  };
+
+  // Unlock immediately once a real idea has been submitted.
+  try{
+    localStorage.setItem("otr_wishlist_unlocked","true");
+  }catch(e){
+    console.warn("Wishlist unlock could not be persisted.", e);
+  }
+
+  el.value="";
+  showScreen("thanks");
+
+  const wishBtn=document.getElementById("wishlistAfterIdea");
+  if(wishBtn) wishBtn.classList.remove("hidden");
+
+  setSubmitStatus("Submitting…");
+
+  try{
+    await submitData(data);
+  }catch(err){
+    // submitData already queues failed network requests; this prevents UI dead-ends.
+    console.warn("Idea submission error:", err);
   }
 }
 
@@ -595,13 +640,8 @@ async function genericSubmit(field,type){
   if(!text){ alert("Add a short note first."); return; }
   const data={
     id:cryptoId(), type, text,
-    timestamp:new Date().toISOString(), anonymous:true, version:"0.3.7"
+    timestamp:new Date().toISOString(), anonymous:true, version:"0.3.9"
   };
-
-  if(type==="Improvement idea"){
-    sessionStorage.setItem("otr_wishlist_unlocked","true");
-    updateWishlistButton();
-  }
 
   el.value="";
   showScreen("thanks");
