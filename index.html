@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#111111" />
-  <title>OTR Communications Portal — V0.4.4</title>
+  <title>OTR Communications Portal — V0.4.6</title>
   <style>
     :root{
       --bg:#f3f5f2;
@@ -370,16 +370,32 @@
       .inventory-card strong{font-size:19px}
     }
 
+
+    .admin-stealth{
+      opacity:.38;
+      filter:grayscale(.8);
+      cursor:pointer;
+      box-shadow:none !important;
+    }
+    .admin-stealth:hover{opacity:.52}
+    .admin-lock-note{
+      background:#fff9e7;
+      border-left:5px solid #e2c75f;
+      border-radius:10px;
+      padding:12px 14px;
+      color:#5b4a08;
+      margin-top:14px;
+    }
 </style>
 </head>
 <body>
 <div class="app">
   <div class="topbar">
     <div class="brand">
-      <h1>OTR Communications Portal</h1>
+      <h1>OTR Team Portal</h1>
       <p>Building winning systems with winning people.</p>
     </div>
-    <div class="pill">Prototype V0.4.4 • Shared database + offline queue</div>
+    <div class="pill">Prototype V0.4.6 • Shared database + offline queue</div>
   </div>
 
   <section id="home" class="screen active">
@@ -423,6 +439,10 @@
 
     <div class="actions">
       <button class="secondary" onclick="showScreen('admin')">Local Queue</button>
+    </div>
+
+    <div style="margin-top:34px;padding-top:18px;border-top:1px solid var(--border);text-align:center">
+      <button type="button" class="secondary admin-stealth" onclick="openAdminAssistant()" style="min-width:220px">Administrative</button>
     </div>
   </section>
 
@@ -740,6 +760,47 @@
     </div>
   </section>
 
+
+
+  <section id="adminAssistant" class="screen">
+    <button class="secondary back" type="button" onclick="showScreen('home')">← Home</button>
+    <div class="hero" style="background:linear-gradient(135deg,rgba(183,255,34,.10),transparent 58%),var(--panel);border-left:8px solid var(--accent);padding:22px">
+      <div class="eyebrow">ADMIN ASSISTANT</div>
+      <h2 style="font-size:32px;margin:8px 0 7px">Administrative tools</h2>
+      <p>Review team submissions and access future administrative functions.</p>
+      <div class="admin-lock-note"><strong>Beta note:</strong> Admin access is intentionally open for now. Authentication will be added before broader deployment.</div>
+    </div>
+
+    <div class="grid">
+      <button type="button" class="bigbtn" onclick="openFormSubmissions()">
+        <strong>Form Submissions</strong>
+        <span>Review feedback, ideas, wishlist items, problem reports, and other portal submissions.</span>
+      </button>
+      <div class="bigbtn" style="cursor:default;opacity:.72">
+        <strong>More Admin Tools</strong>
+        <span>Placeholder for future administrative functions.</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="adminSubmissions" class="screen">
+    <button class="secondary back" type="button" onclick="showScreen('adminAssistant')">← Admin Assistant</button>
+    <h2 class="sectiontitle">Form Submissions</h2>
+    <p class="subtitle">Review shared portal submissions in one place.</p>
+    <div id="adminSubmissionsStatus" class="notice">Loading submissions…</div>
+    <div class="actions" style="margin-bottom:14px">
+      <select id="adminSubmissionFilter" onchange="renderSharedSubmissions()" style="max-width:320px">
+        <option value="ALL">All submissions</option>
+        <option value="feedback">Feedback</option>
+        <option value="Problem report">Problem reports</option>
+        <option value="Improvement idea">Ideas / Improvements</option>
+        <option value="Team Wishlist">Team Wishlist</option>
+      </select>
+      <button type="button" class="secondary" onclick="loadAdminSubmissions()">Refresh</button>
+    </div>
+    <div id="adminSubmissionsList" style="margin-top:18px"></div>
+  </section>
+
   <section id="admin" class="screen">
     <button class="secondary back" onclick="showScreen('home')">← Home</button>
     <h2 class="sectiontitle">Local Queue</h2>
@@ -831,7 +892,7 @@ function setStore(arr){localStorage.setItem("otr_submissions",JSON.stringify(arr
 function queueSubmission(data){const arr=getStore();arr.unshift(data);setStore(arr);}
 const SUPABASE_URL="https://dsikfwheepvwerswmfmr.supabase.co";
 const SUPABASE_KEY="sb_publishable_rSZ1cCRX8s4PHOqxQbNoow_qspBNY6z";
-function toDatabaseRow(data){return {submission_type:data.type||"feedback",category:data.category||null,quick_feedback:data.text||data.quick||null,answers:data.answers||null,additional_details:data.detail||null,submitted_name:data.name||null,anonymous:data.anonymous!==false,app_version:"0.4.4",source:"web"};}
+function toDatabaseRow(data){return {submission_type:data.type||"feedback",category:data.category||null,quick_feedback:data.text||data.quick||null,answers:data.answers||null,additional_details:data.detail||null,submitted_name:data.name||null,anonymous:data.anonymous!==false,app_version:"0.4.6",source:"web"};}
 async function sendToSupabase(data){
   const response=await fetch(`${SUPABASE_URL}/rest/v1/submissions`,{method:"POST",headers:{"apikey":SUPABASE_KEY,"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(toDatabaseRow(data))});
   if(!response.ok){let msg="";try{msg=await response.text();}catch(e){};throw new Error(`Supabase insert failed: ${response.status} ${msg}`);}
@@ -842,7 +903,7 @@ async function submitData(data){try{await sendToSupabase(data);setSubmitStatus("
 async function syncQueue(){const arr=getStore();if(!arr.length)return;const remaining=[];for(const item of arr){try{await sendToSupabase(item);}catch(err){remaining.push(item);}}setStore(remaining);if(document.getElementById("admin").classList.contains("active"))renderAdmin();}
 async function submitQuick(){
   const quick=document.getElementById("quickText").value.trim();const detail=document.getElementById("detailText").value.trim();const name=document.getElementById("nameText").value.trim();
-  const followUpOk=document.getElementById("followUpOk").checked;const data={id:cryptoId(),type:"feedback_detailed",category:activeCategory,quick,answers,detail,name:name||null,anonymous:!name,timestamp:new Date().toISOString(),version:"0.4.4"};showScreen("thanks");setSubmitStatus("Submitting…");await submitData(data);}
+  const followUpOk=document.getElementById("followUpOk").checked;const data={id:cryptoId(),type:"feedback_detailed",category:activeCategory,quick,answers,detail,name:name||null,anonymous:!name,timestamp:new Date().toISOString(),version:"0.4.6"};showScreen("thanks");setSubmitStatus("Submitting…");await submitData(data);}
 
 async function submitDetailed(){
   return submitQuick();
@@ -858,7 +919,7 @@ async function genericSubmit(field,type){
   if(!text){ alert("Add a short note first."); return; }
   const data={
     id:cryptoId(), type, text,
-    timestamp:new Date().toISOString(), anonymous:true, version:"0.4.4"
+    timestamp:new Date().toISOString(), anonymous:true, version:"0.4.6"
   };
 
   el.value="";
@@ -897,6 +958,104 @@ function clearData(){
 
 function escapeHtml(s){
   return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
+}
+
+
+
+let sharedSubmissions=[];
+
+function openAdminAssistant(){
+  showScreen("adminAssistant");
+}
+
+function openFormSubmissions(){
+  showScreen("adminSubmissions");
+  loadAdminSubmissions();
+}
+
+async function loadAdminSubmissions(){
+  const status=document.getElementById("adminSubmissionsStatus");
+  const list=document.getElementById("adminSubmissionsList");
+
+  if(status){
+    status.textContent="Loading shared submissions…";
+    status.style.borderLeftColor="var(--accent-dark)";
+  }
+  if(list) list.innerHTML="";
+
+  try{
+    const response=await fetch(
+      `${SUPABASE_URL}/rest/v1/submissions?select=*&order=created_at.desc&limit=500`,
+      {headers:{"apikey":SUPABASE_KEY}}
+    );
+
+    if(!response.ok){
+      const msg=await response.text();
+      throw new Error(`Supabase read failed: ${response.status} ${msg}`);
+    }
+
+    sharedSubmissions=await response.json();
+
+    if(status){
+      status.textContent=`Loaded ${sharedSubmissions.length} shared submission${sharedSubmissions.length===1?"":"s"}.`;
+      status.style.borderLeftColor="var(--ok)";
+    }
+    renderSharedSubmissions();
+  }catch(err){
+    console.error(err);
+    if(status){
+      status.textContent="Unable to read shared submissions. Run the V0.4.6 admin-read SQL policy in Supabase, then refresh.";
+      status.style.borderLeftColor="var(--danger)";
+    }
+    if(list) list.innerHTML="";
+  }
+}
+
+function renderSharedSubmissions(){
+  const list=document.getElementById("adminSubmissionsList");
+  if(!list) return;
+
+  const filter=document.getElementById("adminSubmissionFilter")?.value||"ALL";
+
+  const rows=sharedSubmissions.filter(item=>{
+    if(filter==="ALL") return true;
+    if(filter==="feedback") return String(item.submission_type||"").startsWith("feedback");
+    return item.submission_type===filter;
+  });
+
+  if(!rows.length){
+    list.innerHTML='<div class="card"><strong>No matching submissions.</strong></div>';
+    return;
+  }
+
+  list.innerHTML=rows.map(item=>{
+    const type=escapeHtml(item.submission_type||"Submission");
+    const category=escapeHtml(item.category||"");
+    const quick=escapeHtml(item.quick_feedback||"");
+    const details=escapeHtml(item.additional_details||"");
+    const name=escapeHtml(item.submitted_name||"Anonymous");
+    const when=item.created_at?new Date(item.created_at).toLocaleString():"";
+    const answers=item.answers && typeof item.answers==="object"
+      ? Object.entries(item.answers)
+          .filter(([k])=>k!=="_follow_up_ok")
+          .map(([k,v])=>`<div class="small"><strong>Q${escapeHtml(k)}:</strong> ${escapeHtml(v)}</div>`)
+          .join("")
+      : "";
+    const follow=item.answers && item.answers._follow_up_ok===true;
+
+    return `<div class="card">
+      <div class="inventory-statusbar">
+        <span class="inv-badge verified">${type}</span>
+        ${category?`<span class="inv-badge">${category}</span>`:""}
+      </div>
+      ${quick?`<p style="font-size:18px"><strong>${quick}</strong></p>`:""}
+      ${answers}
+      ${details?`<p><strong>Additional details:</strong> ${details}</p>`:""}
+      <div class="small" style="margin-top:12px">
+        ${name}${follow?" • OK to follow up":""} • ${escapeHtml(when)}
+      </div>
+    </div>`;
+  }).join("");
 }
 
 function renderAdmin(){
@@ -1197,7 +1356,7 @@ async function addInventoryItem(){
 
 renderCategories();
 
-console.info("OTR portal V0.4.4 submission runtime check", {
+console.info("OTR portal V0.4.6 submission runtime check", {
   submitQuick: typeof submitQuick,
   submitDetailed: typeof submitDetailed,
   genericSubmit: typeof genericSubmit,
@@ -1207,7 +1366,7 @@ console.info("OTR portal V0.4.4 submission runtime check", {
   sendToSupabase: typeof sendToSupabase
 });
 
-console.info("OTR portal V0.4.4 runtime check", {
+console.info("OTR portal V0.4.6 runtime check", {
   cryptoId: typeof cryptoId,
   resetAndHome: typeof resetAndHome,
   genericSubmit: typeof genericSubmit
