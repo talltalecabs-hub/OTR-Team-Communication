@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#111111" />
-  <title>OTR Communications Portal — V0.4.9</title>
+  <title>OTR Communications Portal — V0.5.0</title>
   <style>
     :root{
       --bg:#f3f5f2;
@@ -388,6 +388,29 @@
       color:#5b4a08;
       margin-top:14px;
     }
+
+    /* V0.5.0 interface-state language */
+    .live-feature{
+      border-color:var(--accent-dark) !important;
+      box-shadow:0 5px 16px rgba(20,32,24,.06), inset 0 0 0 1px rgba(183,255,34,.22);
+    }
+    .coming-soon{
+      opacity:.56;
+      filter:grayscale(.35);
+      cursor:default !important;
+      border-style:dashed !important;
+      border-color:#aeb5ad !important;
+      box-shadow:none !important;
+      background:var(--panel2) !important;
+    }
+    .coming-soon strong::after{
+      content:"  •  COMING SOON";
+      font-size:11px;
+      letter-spacing:.08em;
+      color:var(--muted);
+      white-space:nowrap;
+    }
+
 </style>
 </head>
 <body>
@@ -399,7 +422,7 @@
     </div>
     <div style="display:flex;align-items:center;gap:10px">
       <button id="globalHomeButton" type="button" class="secondary hidden" onclick="resetAndHome()" style="min-height:44px;padding:9px 14px;font-size:15px">⌂ Home</button>
-      <div class="pill">Prototype V0.4.9 • Shared database + offline queue</div>
+      <div class="pill">Prototype V0.5.0 • Shared database + offline queue</div>
     </div>
   </div>
 
@@ -410,33 +433,33 @@
       <p>You can submit feedback in under a minute or go deeper when you have time.</p>
     </div>
     <div class="grid">
-      <button class="bigbtn" onclick="showScreen('categories')">
+      <button class="bigbtn live-feature" onclick="showScreen('categories')">
         <strong>Feedback</strong>
         <span>Quick, optionally anonymous feedback about any team system.</span>
       </button>
-      <button class="bigbtn" onclick="showScreen('postevent')">
+      <button class="bigbtn live-feature" onclick="showScreen('postevent')">
         <strong>Post-Event Report</strong>
         <span>Structured event notes, facts, usage, needs, and follow-up.</span>
       </button>
-      <button class="bigbtn" onclick="showScreen('problem')">
+      <button class="bigbtn live-feature" onclick="showScreen('problem')">
         <strong>Report a Problem</strong>
         <span>Something broken, missing, unsafe, confusing, delayed, or blocked.</span>
       </button>
-      <button class="bigbtn" onclick="showScreen('idea')">
+      <button class="bigbtn live-feature" onclick="showScreen('idea')">
         <strong>Ideas / Improvements</strong>
         <span>A better way, useful experiment, or something worth trying.</span>
       </button>
     </div>
 
     <div style="margin-top:22px">
-      <button class="bigbtn" onclick="showScreen('driversLounge')" style="border:2px solid var(--accent-dark);background:linear-gradient(135deg, rgba(183,255,34,.12), rgba(255,255,255,0) 55%), var(--panel)">
+      <button class="bigbtn live-feature" onclick="showScreen('driversLounge')" style="border:2px solid var(--accent-dark);background:linear-gradient(135deg, rgba(183,255,34,.12), rgba(255,255,255,0) 55%), var(--panel)">
         <strong>Driver’s Lounge</strong>
         <span>Pre-stint check-in, post-stint debrief, and driver-specific feedback. Coming next.</span>
       </button>
     </div>
 
     <div style="margin-top:14px">
-      <button class="bigbtn" onclick="showScreen('shopTalk')" style="border:2px solid var(--accent-dark);background:linear-gradient(135deg, rgba(183,255,34,.12), rgba(255,255,255,0) 55%), var(--panel)">
+      <button class="bigbtn live-feature" onclick="showScreen('shopTalk')" style="border:2px solid var(--accent-dark);background:linear-gradient(135deg, rgba(183,255,34,.12), rgba(255,255,255,0) 55%), var(--panel)">
         <strong>Shop Talk</strong>
         <span>Hands-on crew operations, technical reporting, spares, incidents, and shop-to-track communication. Coming next.</span>
       </button>
@@ -500,15 +523,15 @@
       <p>Planned for the next development layer: quick pre-stint check-in, post-stint debrief, and deeper driver-specific feedback.</p>
     </div>
     <div class="grid">
-      <div class="bigbtn" style="cursor:default">
+      <div class="bigbtn coming-soon" style="cursor:default">
         <strong>Pre-Stint Check-In</strong>
         <span>Focus, physical readiness, concerns, car confidence, and anything the team should know before you get in.</span>
       </div>
-      <div class="bigbtn" style="cursor:default">
+      <div class="bigbtn coming-soon" style="cursor:default">
         <strong>Post-Stint Debrief</strong>
         <span>Car behavior, traffic, physical condition, communication, incidents, and what the next driver/team should know.</span>
       </div>
-      <div class="bigbtn" style="cursor:default">
+      <div class="bigbtn coming-soon" style="cursor:default">
         <strong>Driver Feedback</strong>
         <span>Deeper feedback about the car, pit process, preparation, communication, and driver experience.</span>
       </div>
@@ -525,19 +548,19 @@
       <p>A crew-facing workspace for technical communication, reporting, resources, and the things that keep the cars moving.</p>
     </div>
     <div class="grid">
-      <div class="bigbtn" style="cursor:default">
+      <div class="bigbtn coming-soon" style="cursor:default">
         <strong>Technical / Car Reports</strong>
         <span>Mechanical findings, setup concerns, repairs, failures, and post-session technical notes.</span>
       </div>
-      <button class="bigbtn" onclick="openInventoryAssistant()">
+      <button class="bigbtn live-feature" onclick="openInventoryAssistant()">
         <strong>Inventory & Spares</strong>
         <span>Search current inventory, verify imported records, correct quantities and locations, or add what you find.</span>
       </button>
-      <div class="bigbtn" style="cursor:default">
+      <div class="bigbtn coming-soon" style="cursor:default">
         <strong>Incident / Damage Reports</strong>
         <span>Document crashes, contact, damage, failures, and immediate follow-up needs.</span>
       </div>
-      <div class="bigbtn" style="cursor:default">
+      <div class="bigbtn coming-soon" style="cursor:default">
         <strong>Crew Operations</strong>
         <span>Shop, paddock, pit, tools, workflow, logistics, and shop-to-track communication.</span>
       </div>
@@ -555,15 +578,15 @@
     </div>
 
     <div class="platform-grid">
-      <button type="button" class="platform-btn accent" onclick="browseInventory('E92')">E92 M3<span>Race chassis inventory</span></button>
-      <button type="button" class="platform-btn accent" onclick="browseInventory('986 Boxster')">986 Boxster<span>Race chassis inventory</span></button>
-      <button type="button" class="platform-btn accent" onclick="browseInventory('F30')">F30 3XX<span>Race chassis inventory</span></button>
-      <button type="button" class="platform-btn accent" onclick="browseInventory('M235 / M235iR')">M235iR<span>Race chassis inventory</span></button>
-      <button type="button" class="platform-btn" onclick="browseInventory('Non-Race')">Non-Race<span>General / non-race vehicle inventory</span></button>
-      <button type="button" class="platform-btn" onclick="browseInventory('Tow')">Tow<span>Tow vehicles, recovery and related spares</span></button>
-      <button type="button" class="platform-btn" onclick="browseInventory('Trailer')">Trailer<span>Trailer parts, loading and support equipment</span></button>
-      <button type="button" class="platform-btn accent" style="grid-column:1/-1" onclick="browseInventory('ALL')">🔎 Search Entire Inventory<span>Search all current and imported inventory records</span></button>
-      <button type="button" class="platform-btn" style="grid-column:1/-1;border-color:var(--accent-dark);background:linear-gradient(135deg,rgba(183,255,34,.12),rgba(255,255,255,0) 55%),var(--panel)" onclick="openAddInventory()">＋ Add Inventory Item<span>Add newly found or acquired inventory</span></button>
+      <button type="button" class="platform-btn live-feature accent" onclick="browseInventory('E92')">E92 M3<span>Race chassis inventory</span></button>
+      <button type="button" class="platform-btn live-feature accent" onclick="browseInventory('986 Boxster')">986 Boxster<span>Race chassis inventory</span></button>
+      <button type="button" class="platform-btn live-feature accent" onclick="browseInventory('F30')">F30 3XX<span>Race chassis inventory</span></button>
+      <button type="button" class="platform-btn live-feature accent" onclick="browseInventory('M235 / M235iR')">M235iR<span>Race chassis inventory</span></button>
+      <button type="button" class="platform-btn live-feature" onclick="browseInventory('Non-Race')">Non-Race<span>General / non-race vehicle inventory</span></button>
+      <button type="button" class="platform-btn live-feature" onclick="browseInventory('Tow')">Tow<span>Tow vehicles, recovery and related spares</span></button>
+      <button type="button" class="platform-btn live-feature" onclick="browseInventory('Trailer')">Trailer<span>Trailer parts, loading and support equipment</span></button>
+      <button type="button" class="platform-btn live-feature accent" style="grid-column:1/-1" onclick="browseInventory('ALL')">🔎 Search Entire Inventory<span>Search all current and imported inventory records</span></button>
+      <button type="button" class="platform-btn live-feature" style="grid-column:1/-1;border-color:var(--accent-dark);background:linear-gradient(135deg,rgba(183,255,34,.12),rgba(255,255,255,0) 55%),var(--panel)" onclick="openAddInventory()">＋ Add Inventory Item<span>Add newly found or acquired inventory</span></button>
     </div>
   </section>
 
@@ -844,7 +867,7 @@
       </div>
     </div>
 
-    <button type="button" class="bigbtn wishlist-egg" onclick="showScreen('wishlist')">
+    <button type="button" class="bigbtn live-feature wishlist-egg" onclick="showScreen('wishlist')">
       <strong>Team Wishlist ✨</strong>
       <span>Got something the team should have, build, buy, or try? Add it here.</span>
     </button>
@@ -892,15 +915,15 @@
     </div>
 
     <div class="grid">
-      <button type="button" class="bigbtn" onclick="openFormSubmissions()">
+      <button type="button" class="bigbtn live-feature" onclick="openFormSubmissions()">
         <strong>Form Submissions</strong>
         <span>Review feedback, ideas, wishlist items, problem reports, and other portal submissions.</span>
       </button>
-      <button type="button" class="bigbtn" onclick="showScreen('admin')">
+      <button type="button" class="bigbtn live-feature" onclick="showScreen('admin')">
         <strong>Local Queue</strong>
         <span>Review submissions waiting to sync from this device, export them, or clear the local queue.</span>
       </button>
-      <div class="bigbtn" style="cursor:default;opacity:.72">
+      <div class="bigbtn coming-soon" style="cursor:default;opacity:.72">
         <strong>More Admin Tools</strong>
         <span>Placeholder for future administrative functions.</span>
       </div>
@@ -1021,7 +1044,7 @@ function setStore(arr){localStorage.setItem("otr_submissions",JSON.stringify(arr
 function queueSubmission(data){const arr=getStore();arr.unshift(data);setStore(arr);}
 const SUPABASE_URL="https://dsikfwheepvwerswmfmr.supabase.co";
 const SUPABASE_KEY="sb_publishable_rSZ1cCRX8s4PHOqxQbNoow_qspBNY6z";
-function toDatabaseRow(data){return {submission_type:data.type||"feedback",category:data.category||null,quick_feedback:data.text||data.quick||null,answers:data.answers||null,additional_details:data.detail||null,submitted_name:data.name||null,anonymous:data.anonymous!==false,app_version:"0.4.9",source:"web"};}
+function toDatabaseRow(data){return {submission_type:data.type||"feedback",category:data.category||null,quick_feedback:data.text||data.quick||null,answers:data.answers||null,additional_details:data.detail||null,submitted_name:data.name||null,anonymous:data.anonymous!==false,app_version:"0.5.0",source:"web"};}
 async function sendToSupabase(data){
   const response=await fetch(`${SUPABASE_URL}/rest/v1/submissions`,{method:"POST",headers:{"apikey":SUPABASE_KEY,"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(toDatabaseRow(data))});
   if(!response.ok){let msg="";try{msg=await response.text();}catch(e){};throw new Error(`Supabase insert failed: ${response.status} ${msg}`);}
@@ -1048,7 +1071,7 @@ async function submitQuick(){
     name:null,
     anonymous:true,
     timestamp:new Date().toISOString(),
-    version:"0.4.9"
+    version:"0.5.0"
   };
 
   showScreen("thanks");
@@ -1081,7 +1104,7 @@ async function submitDetailed(){
     name:name||null,
     anonymous:!name,
     timestamp:new Date().toISOString(),
-    version:"0.4.9"
+    version:"0.5.0"
   };
 
   showScreen("thanks");
@@ -1153,7 +1176,7 @@ async function submitPostEvent(){
     name:name||null,
     anonymous:!name,
     timestamp:new Date().toISOString(),
-    version:"0.4.9"
+    version:"0.5.0"
   };
 
   const btn=document.getElementById("postEventSubmitBtn");
@@ -1172,7 +1195,7 @@ async function genericSubmit(field,type){
   if(!text){ alert("Add a short note first."); return; }
   const data={
     id:cryptoId(), type, text,
-    timestamp:new Date().toISOString(), anonymous:true, version:"0.4.9"
+    timestamp:new Date().toISOString(), anonymous:true, version:"0.5.0"
   };
 
   el.value="";
@@ -1268,7 +1291,7 @@ async function loadAdminSubmissions(){
   }catch(err){
     console.error(err);
     if(status){
-      status.textContent="Unable to read shared submissions. Run the V0.4.9 admin-read SQL policy in Supabase, then refresh.";
+      status.textContent="Unable to read shared submissions. Run the V0.5.0 admin-read SQL policy in Supabase, then refresh.";
       status.style.borderLeftColor="var(--danger)";
     }
     if(list) list.innerHTML="";
@@ -1664,7 +1687,7 @@ async function addInventoryItem(){
 
 renderCategories();
 
-console.info("OTR portal V0.4.9 submission runtime check", {
+console.info("OTR portal V0.5.0 submission runtime check", {
   submitQuick: typeof submitQuick,
   submitDetailed: typeof submitDetailed,
   genericSubmit: typeof genericSubmit,
@@ -1674,7 +1697,7 @@ console.info("OTR portal V0.4.9 submission runtime check", {
   sendToSupabase: typeof sendToSupabase
 });
 
-console.info("OTR portal V0.4.9 runtime check", {
+console.info("OTR portal V0.5.0 runtime check", {
   cryptoId: typeof cryptoId,
   resetAndHome: typeof resetAndHome,
   genericSubmit: typeof genericSubmit
