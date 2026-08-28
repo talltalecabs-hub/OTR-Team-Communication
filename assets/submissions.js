@@ -95,6 +95,15 @@ async function submitOperationalForm(){
     return;
   }
 
+  if(def.vehicleField){
+    const selected=vehicleRegistry.find(vehicle=>vehicle.vehicle_code===values[def.vehicleField]);
+    if(selected){
+      values.vehicle_name=selected.vehicle_name;
+      values.vehicle_label=vehicleDisplayLabel(selected);
+      values.vehicle_status=selected.status||"Active";
+    }
+  }
+
   const identity=def.identityField ? String(values[def.identityField]||"").trim() : "";
   const summary=def.summaryField ? String(values[def.summaryField]||"").trim() : "";
   const data={
@@ -218,7 +227,7 @@ function exportData(){
   const blob=new Blob([data],{type:"application/json"});
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a");
-  a.href=url;a.download="otr-portal-v0.1-data.json";a.click();
+  a.href=url;a.download="otr-portal-v1-data.json";a.click();
   setTimeout(()=>URL.revokeObjectURL(url),500);
 }
 
@@ -310,7 +319,10 @@ function renderSharedSubmissions(){
             const labels={
               event:"Event",role:"Role",areas:"Cars / Areas",
               driver:"Driver / initials",reporter:"Reporter / initials",
-              car:"Car / vehicle category",unit:"Car / unit identifier",session:"Session",focus:"Focus",
+              car:"Car / vehicle category",unit:"Car / unit identifier",
+              vehicle_category:"Chassis category",vehicle:"Exact vehicle",
+              vehicle_name:"Exact vehicle name",vehicle_label:"Exact vehicle",vehicle_status:"Vehicle status",
+              session:"Session",focus:"Focus",
               improve:"Improve / understand",experiment:"Experiment / small test",
               readiness:"Readiness",confidence:"Car confidence",
               concerns:"Concerns before stint",team_need:"Team need",

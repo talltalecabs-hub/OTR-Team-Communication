@@ -1,5 +1,6 @@
 initializePortalHistory();
 renderCategories();
+loadVehicleRegistry();
 
 const runtimeChecks={
   submitQuick,
@@ -9,6 +10,8 @@ const runtimeChecks={
   genericSubmit,
   openOperationalForm,
   leaveOperationalForm,
+  loadVehicleRegistry,
+  refreshOperationalVehicleOptions,
   renderAdmin,
   cryptoId,
   resetAndHome,

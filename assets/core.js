@@ -22,10 +22,40 @@ const internalVehicleCategories = [
   "986 Boxster",
   "F30",
   "M235 / M235iR",
+  "E46",
   "Non-Race",
   "Tow",
   "Trailer"
 ];
+
+const fallbackVehicleRegistry = [
+  {vehicle_code:"F30-GOLDIE",platform:"F30",vehicle_name:"Goldie",designation:"69",status:"Active",display_order:10},
+  {vehicle_code:"F30-PHO30",platform:"F30",vehicle_name:"Pho30",designation:"65",status:"Active",display_order:20},
+  {vehicle_code:"F30-68-CAR",platform:"F30",vehicle_name:"68 car",designation:"68",status:"Active",display_order:30},
+  {vehicle_code:"F30-ESTHER",platform:"F30",vehicle_name:"Esther",designation:"Street",status:"Street",display_order:40},
+  {vehicle_code:"F30-HALF-AND-HALF",platform:"F30",vehicle_name:"Half and Half 428i",designation:"70 / Street",status:"Street",display_order:50},
+  {vehicle_code:"E92-CHERRY",platform:"E92",vehicle_name:"Cherry",designation:"64",status:"Active",display_order:10},
+  {vehicle_code:"E92-ACID-TRIP",platform:"E92",vehicle_name:"Acid Trip",designation:"67",status:"Active",display_order:20},
+  {vehicle_code:"E92-HULK",platform:"E92",vehicle_name:"Hulk",designation:"63",status:"Deceased",display_order:30},
+  {vehicle_code:"E92-HIGH-BOI",platform:"E92",vehicle_name:"High Boi",designation:"Street",status:"Street",display_order:40},
+  {vehicle_code:"E92-PRINCE",platform:"E92",vehicle_name:"Prince",designation:"69",status:"Active",display_order:50},
+  {vehicle_code:"M235-RAPTOR",platform:"M235 / M235iR",vehicle_name:"Raptor",designation:"62",status:"Active",display_order:10},
+  {vehicle_code:"M235-TRIXIE",platform:"M235 / M235iR",vehicle_name:"Trixie",designation:"61",status:"Active",display_order:20},
+  {vehicle_code:"986-BRUNO",platform:"986 Boxster",vehicle_name:"Bruno",designation:"58",status:"Active",display_order:10},
+  {vehicle_code:"986-RED-BOX",platform:"986 Boxster",vehicle_name:"Red Box",designation:"59",status:"Active",display_order:20},
+  {vehicle_code:"E46-BLUE-BETTY",platform:"E46",vehicle_name:"Blue Betty",designation:"Street",status:"Street",display_order:10},
+  {vehicle_code:"E46-CLOWN-SHOE-Z3",platform:"E46",vehicle_name:"Clown Shoe Z3",designation:"67",status:"Active",display_order:20},
+  {vehicle_code:"TOW-RON-BURGUNDY",platform:"Tow",vehicle_name:"Ron Burgundy",designation:"F350",status:"Active",display_order:10},
+  {vehicle_code:"TOW-VICKY",platform:"Tow",vehicle_name:"Vicky",designation:"F350",status:"Active",display_order:20},
+  {vehicle_code:"TOW-CAYENNE",platform:"Tow",vehicle_name:"Cayenne",designation:"Tow",status:"Active",display_order:30},
+  {vehicle_code:"TRAILER-WHITE-LIGHTNING",platform:"Trailer",vehicle_name:"White Lightning",designation:"Trailer",status:"Active",display_order:10},
+  {vehicle_code:"TRAILER-WEDGE",platform:"Trailer",vehicle_name:"Wedge",designation:"Trailer",status:"Active",display_order:20},
+  {vehicle_code:"TRAILER-TWO-CAR",platform:"Trailer",vehicle_name:"Two Car",designation:"Trailer",status:"Active",display_order:30},
+  {vehicle_code:"TRAILER-SINGLE-CAR",platform:"Trailer",vehicle_name:"Single Car",designation:"Trailer",status:"Active",display_order:40}
+];
+
+let vehicleRegistry = [...fallbackVehicleRegistry];
+let vehicleRegistryReady = false;
 
 const operationalFormDefinitions = {
   driverPre: {
@@ -37,11 +67,12 @@ const operationalFormDefinitions = {
     category: "Driver's Lounge",
     submitLabel: "Save Pre-Stint Check-In",
     identityField: "driver",
-    summaryField: "session",
+    summaryField: "vehicle_name",
+    vehicleField: "vehicle",
     fields: [
       {id:"driver",label:"Driver / initials",type:"text",placeholder:"e.g. JB",required:true},
-      {id:"car",label:"Car / chassis category",type:"select",options:internalVehicleCategories,required:true},
-      {id:"unit",label:"Car / unit identifier",type:"text",placeholder:"Optional number or chassis ID",wide:true},
+      {id:"vehicle_category",label:"Chassis category",type:"vehicleCategory",required:true},
+      {id:"vehicle",label:"Exact vehicle",type:"vehicleExact",required:true,wide:true},
       {id:"session",label:"Session",type:"select",options:["Practice","Qualifying","Race","Testing","Other"]},
       {id:"readiness",label:"Physical / mental readiness",type:"select",options:["Ready","Mostly ready","Need support before driving"]},
       {id:"confidence",label:"Car confidence",type:"select",options:["High","Good","Needs attention"]},
@@ -61,11 +92,12 @@ const operationalFormDefinitions = {
     category: "Driver's Lounge",
     submitLabel: "Save Post-Stint Debrief",
     identityField: "driver",
-    summaryField: "session",
+    summaryField: "vehicle_name",
+    vehicleField: "vehicle",
     fields: [
       {id:"driver",label:"Driver / initials",type:"text",placeholder:"e.g. JB",required:true},
-      {id:"car",label:"Car / chassis category",type:"select",options:internalVehicleCategories,required:true},
-      {id:"unit",label:"Car / unit identifier",type:"text",placeholder:"Optional number or chassis ID",wide:true},
+      {id:"vehicle_category",label:"Chassis category",type:"vehicleCategory",required:true},
+      {id:"vehicle",label:"Exact vehicle",type:"vehicleExact",required:true,wide:true},
       {id:"session",label:"Session",type:"select",options:["Practice","Qualifying","Race","Testing","Other"]},
       {id:"overall",label:"Overall stint",type:"select",options:["Good","Mixed","Needs follow-up"]},
       {id:"focus_result",label:"Looking back at your pre-stint focus, what did you notice?",type:"textarea",placeholder:"Did you execute, learn, or protect what you set out to?",wide:true},
@@ -103,11 +135,12 @@ const operationalFormDefinitions = {
     category: "Shop Talk",
     submitLabel: "Submit Technical Report",
     identityField: "reporter",
-    summaryField: "car",
+    summaryField: "vehicle_name",
+    vehicleField: "vehicle",
     fields: [
       {id:"reporter",label:"Reporter / initials",type:"text",placeholder:"Optional"},
-      {id:"car",label:"Car / chassis category",type:"select",options:internalVehicleCategories,required:true},
-      {id:"unit",label:"Car / unit identifier",type:"text",placeholder:"Optional number or chassis ID",wide:true},
+      {id:"vehicle_category",label:"Chassis category",type:"vehicleCategory",required:true},
+      {id:"vehicle",label:"Exact vehicle",type:"vehicleExact",required:true,wide:true},
       {id:"session",label:"When noticed",type:"select",options:["Before session","During session","After session","In shop","Other"]},
       {id:"urgency",label:"Urgency",type:"select",options:["Routine","Before next session","Stop and inspect"]},
       {id:"finding",label:"Finding or observation",type:"textarea",placeholder:"What happened, what you saw, or what changed.",required:true,wide:true},
@@ -123,11 +156,12 @@ const operationalFormDefinitions = {
     category: "Shop Talk",
     submitLabel: "Submit Incident Report",
     identityField: "reporter",
-    summaryField: "car",
+    summaryField: "vehicle_name",
+    vehicleField: "vehicle",
     fields: [
       {id:"reporter",label:"Reporter / initials",type:"text",placeholder:"Optional"},
-      {id:"car",label:"Car / vehicle category",type:"select",options:internalVehicleCategories,required:true},
-      {id:"unit",label:"Car / unit identifier",type:"text",placeholder:"Optional number or chassis ID",wide:true},
+      {id:"vehicle_category",label:"Chassis category",type:"vehicleCategory",required:true},
+      {id:"vehicle",label:"Exact vehicle",type:"vehicleExact",required:true,wide:true},
       {id:"when",label:"When / session",type:"text",placeholder:"e.g. Race 2, lap 14"},
       {id:"safe_to_run",label:"Safe to run?",type:"select",options:["Unknown - inspect first","Yes - no apparent safety issue","No - hold vehicle"]},
       {id:"incident",label:"What happened?",type:"textarea",placeholder:"Describe the incident or failure factually.",required:true,wide:true},
@@ -337,6 +371,64 @@ function cryptoId(){
   return "otr-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8);
 }
 
+function vehicleDisplayLabel(vehicle){
+  if(!vehicle) return "";
+  const name=String(vehicle.vehicle_name||"").trim();
+  const designation=String(vehicle.designation||"").trim();
+  return designation ? `${name} — ${designation}` : name;
+}
+
+function vehicleOptionsForCategory(category){
+  return vehicleRegistry
+    .filter(vehicle=>vehicle.platform===category)
+    .sort((a,b)=>Number(a.display_order||0)-Number(b.display_order||0)
+      || String(a.vehicle_name||"").localeCompare(String(b.vehicle_name||"")));
+}
+
+function refreshOperationalVehicleOptions(){
+  const categoryEl=document.getElementById("op-vehicle_category");
+  const vehicleEl=document.getElementById("op-vehicle");
+  if(!vehicleEl) return;
+
+  const category=categoryEl?.value||"";
+  const previous=vehicleEl.value;
+  const options=vehicleOptionsForCategory(category);
+  const prompt=category
+    ? (options.length ? "Choose exact vehicle…" : "No vehicles listed for this category")
+    : "Choose chassis category first";
+
+  vehicleEl.innerHTML=`<option value="">${escapeHtml(prompt)}</option>`+
+    options.map(vehicle=>{
+      const status=String(vehicle.status||"Active").trim();
+      const designation=String(vehicle.designation||"").trim();
+      const designationTokens=designation.toLowerCase().split(/[\s/]+/).filter(Boolean);
+      const suffix=status && status!=="Active" && !designationTokens.includes(status.toLowerCase())
+        ? ` (${status})` : "";
+      return `<option value="${escapeHtml(vehicle.vehicle_code)}">${escapeHtml(vehicleDisplayLabel(vehicle))}${escapeHtml(suffix)}</option>`;
+    }).join("");
+  vehicleEl.disabled=!category || !options.length;
+
+  if(options.some(vehicle=>vehicle.vehicle_code===previous)) vehicleEl.value=previous;
+}
+
+async function loadVehicleRegistry(){
+  try{
+    const response=await fetch(
+      `${SUPABASE_URL}/rest/v1/vehicles?select=vehicle_code,platform,vehicle_name,designation,status,display_order&order=platform,display_order,vehicle_name`,
+      {headers:{"apikey":SUPABASE_KEY}}
+    );
+    if(!response.ok) throw new Error(`Vehicle registry read failed: ${response.status}`);
+    const rows=await response.json();
+    if(Array.isArray(rows) && rows.length){
+      vehicleRegistry=rows;
+      vehicleRegistryReady=true;
+    }
+  }catch(err){
+    console.warn("Vehicle registry unavailable; using bundled registry.",err);
+  }
+  refreshOperationalVehicleOptions();
+}
+
 function operationalFieldHtml(field){
   const id=`op-${field.id}`;
   const wide=field.wide?" wide":"";
@@ -350,6 +442,15 @@ function operationalFieldHtml(field){
     const options=(field.options||[]).map(option=>`<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join("");
     return `<div class="question${wide}"><label for="${id}">${escapeHtml(field.label)}</label><select id="${id}" data-operational-field="${escapeHtml(field.id)}"><option value="">Choose one…</option>${options}</select></div>`;
   }
+  if(field.type==="vehicleCategory"){
+    const options=internalVehicleCategories
+      .map(category=>`<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`)
+      .join("");
+    return `<div class="question${wide}"><label for="${id}">${escapeHtml(field.label)}</label><select id="${id}" data-operational-field="${escapeHtml(field.id)}" onchange="refreshOperationalVehicleOptions()"><option value="">Choose chassis category…</option>${options}</select></div>`;
+  }
+  if(field.type==="vehicleExact"){
+    return `<div class="question${wide}"><label for="${id}">${escapeHtml(field.label)}</label><select id="${id}" data-operational-field="${escapeHtml(field.id)}" disabled onchange="refreshOperationalVehicleOptions()"><option value="">Choose chassis category first</option></select></div>`;
+  }
   return `<div class="question${wide}"><label for="${id}">${escapeHtml(field.label)}</label><input id="${id}" data-operational-field="${escapeHtml(field.id)}" maxlength="160" placeholder="${escapeHtml(field.placeholder||"")}" /></div>`;
 }
 
@@ -362,6 +463,7 @@ function openOperationalForm(key){
   document.getElementById("operationalFormSubtitle").textContent=def.subtitle;
   document.getElementById("operationalFormFields").innerHTML=def.fields.map(operationalFieldHtml).join("");
   document.getElementById("operationalFormSubmitBtn").textContent=def.submitLabel;
+  refreshOperationalVehicleOptions();
   showScreen("operationalForm");
 }
 
