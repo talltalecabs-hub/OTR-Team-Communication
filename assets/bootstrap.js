@@ -1,3 +1,4 @@
+initializePortalHistory();
 renderCategories();
 
 const runtimeChecks={
@@ -8,6 +9,8 @@ const runtimeChecks={
   renderAdmin,
   cryptoId,
   resetAndHome,
+  portalBack,
+  initializePortalHistory,
   sendToSupabase,
   loadInventory
 };

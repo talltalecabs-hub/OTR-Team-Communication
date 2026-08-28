@@ -107,7 +107,7 @@ function renderInventoryResults(){
 function findInventoryItem(key){
   return inventoryData.find(x=>String(x.local_key)===String(key));
 }
-function openInventoryDetail(key){
+function openInventoryDetail(key,historyMode="push"){
   const item=findInventoryItem(key);
   if(!item) return;
   currentInventoryItem=item;
@@ -137,7 +137,7 @@ function openInventoryDetail(key){
         <button class="danger" type="button" onclick="markInventoryNotFound()">Not Found</button>
       </div>
     </div>`;
-  showScreen("inventoryDetail");
+  showScreen("inventoryDetail",{historyMode});
 }
 function openInventoryVerify(){
   const i=currentInventoryItem;if(!i)return;
@@ -197,7 +197,7 @@ async function saveInventoryVerification(){
   const saved=await persistInventoryPatch(currentInventoryItem,patch);
   if(!saved) return;
   Object.assign(currentInventoryItem,patch);
-  openInventoryDetail(currentInventoryItem.local_key);
+  openInventoryDetail(currentInventoryItem.local_key,"replace");
 }
 async function markInventoryNeedsReview(){
   if(!currentInventoryItem)return;
@@ -205,7 +205,7 @@ async function markInventoryNeedsReview(){
   const saved=await persistInventoryPatch(currentInventoryItem,patch);
   if(!saved) return;
   Object.assign(currentInventoryItem,patch);
-  openInventoryDetail(currentInventoryItem.local_key);
+  openInventoryDetail(currentInventoryItem.local_key,"replace");
 }
 async function markInventoryNotFound(){
   if(!currentInventoryItem)return;
@@ -214,7 +214,7 @@ async function markInventoryNotFound(){
   const saved=await persistInventoryPatch(currentInventoryItem,patch);
   if(!saved) return;
   Object.assign(currentInventoryItem,patch);
-  openInventoryDetail(currentInventoryItem.local_key);
+  openInventoryDetail(currentInventoryItem.local_key,"replace");
 }
 function openAddInventory(){
   ["addItemName","addLocation","addCategory","addPartNumber","addAssignedVehicle","addNotes"].forEach(id=>{const el=document.getElementById(id);if(el)el.value="";});
@@ -287,7 +287,7 @@ async function addInventoryItem(){
     inventoryData.push(liveItem);
     currentInventoryItem=liveItem;
     inventoryFilter="ALL";
-    openInventoryDetail(liveItem.local_key);
+    openInventoryDetail(liveItem.local_key,"replace");
   }catch(err){
     console.error(err);
     alert("Unable to add inventory to the shared database. Nothing was saved.");

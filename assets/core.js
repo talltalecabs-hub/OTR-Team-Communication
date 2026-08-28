@@ -19,12 +19,16 @@ const questions = [
 
 let activeCategory = "";
 let answers = {};
+let portalHistoryDepth = 0;
+let pendingPortalResetScreen = null;
+let portalHistoryReady = false;
+let portalNoticeTimer = null;
 
-function showScreen(id){
+function renderPortalScreen(id){
   const target=document.getElementById(id);
   if(!target){
     console.error(`Unknown portal screen: ${id}`);
-    return;
+    return false;
   }
 
   document.querySelectorAll(".screen").forEach(x=>x.classList.remove("active"));
@@ -35,6 +39,118 @@ function showScreen(id){
 
   window.scrollTo(0,0);
   if(id==="admin") renderAdmin();
+  return true;
+}
+
+function portalHistoryUrl(id){
+  return `${window.location.pathname}${window.location.search}#${id}`;
+}
+
+function showPortalNavNotice(message){
+  let notice=document.getElementById("portalNavNotice");
+  if(!notice){
+    notice=document.createElement("div");
+    notice.id="portalNavNotice";
+    notice.className="portal-nav-notice";
+    notice.setAttribute("role","status");
+    notice.setAttribute("aria-live","polite");
+    document.body.appendChild(notice);
+  }
+
+  notice.textContent=message;
+  notice.classList.add("show");
+  clearTimeout(portalNoticeTimer);
+  portalNoticeTimer=setTimeout(()=>notice.classList.remove("show"),1600);
+}
+
+function showScreen(id,{historyMode="push"}={}){
+  if(!renderPortalScreen(id)) return;
+  if(!portalHistoryReady || historyMode==="none") return;
+
+  const current=window.history.state;
+  if(historyMode==="replace"){
+    window.history.replaceState(
+      {otrPortal:true,screen:id,depth:portalHistoryDepth},
+      "",
+      portalHistoryUrl(id)
+    );
+    return;
+  }
+
+  if(current?.otrPortal && current.screen===id) return;
+
+  portalHistoryDepth+=1;
+  window.history.pushState(
+    {otrPortal:true,screen:id,depth:portalHistoryDepth},
+    "",
+    portalHistoryUrl(id)
+  );
+}
+
+function portalBack(fallback="home"){
+  if(portalHistoryReady && portalHistoryDepth>0){
+    window.history.back();
+    return;
+  }
+
+  if(fallback==="home"){
+    resetAndHome();
+  }else{
+    showScreen(fallback,{historyMode:"replace"});
+  }
+}
+
+function resetPortalNavigation(target="home"){
+  pendingPortalResetScreen=target;
+  renderPortalScreen("home");
+
+  if(portalHistoryReady && portalHistoryDepth>0){
+    window.history.go(-portalHistoryDepth);
+    return;
+  }
+
+  pendingPortalResetScreen=null;
+  if(target!=="home") showScreen(target);
+}
+
+function initializePortalHistory(){
+  window.history.replaceState(
+    {otrPortalGuard:true,screen:"home",depth:-1},
+    "",
+    portalHistoryUrl("home")
+  );
+  window.history.pushState(
+    {otrPortal:true,screen:"home",depth:0},
+    "",
+    portalHistoryUrl("home")
+  );
+
+  portalHistoryDepth=0;
+  portalHistoryReady=true;
+
+  window.addEventListener("popstate",event=>{
+    const state=event.state;
+
+    if(state?.otrPortalGuard){
+      showPortalNavNotice("Already at Home");
+      window.history.forward();
+      return;
+    }
+
+    if(!state?.otrPortal){
+      window.history.forward();
+      return;
+    }
+
+    portalHistoryDepth=Math.max(0,Number(state.depth)||0);
+    renderPortalScreen(state.screen||"home");
+
+    if(portalHistoryDepth===0 && pendingPortalResetScreen){
+      const target=pendingPortalResetScreen;
+      pendingPortalResetScreen=null;
+      if(target!=="home") showScreen(target);
+    }
+  });
 }
 
 function renderCategories(){
@@ -103,7 +219,14 @@ function resetAndHome(){
 
   ["feedback", "postevent", "problem", "idea", "wishlist"].forEach(resetFormSection);
 
-  showScreen("home");
+  resetPortalNavigation("home");
+}
+
+function startMoreFeedback(){
+  activeCategory="";
+  answers={};
+  resetFormSection("feedback");
+  resetPortalNavigation("categories");
 }
 
 
