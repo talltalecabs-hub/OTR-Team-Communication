@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#111111" />
-  <title>OTR Team Portal — V0.5.1</title>
+  <title>OTR Team Portal — V0.5.3</title>
   <link rel="stylesheet" href="assets/styles.css" />
 </head>
 <body>
@@ -16,7 +16,7 @@
     </div>
     <div style="display:flex;align-items:center;gap:10px">
       <button id="globalHomeButton" type="button" class="secondary hidden" onclick="resetAndHome()" style="min-height:44px;padding:9px 14px;font-size:15px">⌂ Home</button>
-      <div class="pill">Prototype V0.5.1 • Shared database + offline queue</div>
+      <div class="pill">Prototype V0.5.3 • Shared database + offline queue</div>
     </div>
   </div>
 
@@ -48,14 +48,14 @@
     <div style="margin-top:22px">
       <button class="bigbtn live-feature" onclick="showScreen('driversLounge')" style="border:2px solid var(--accent-dark);background:linear-gradient(135deg, rgba(183,255,34,.12), rgba(255,255,255,0) 55%), var(--panel)">
         <strong>Driver’s Lounge</strong>
-        <span>Pre-stint check-in, post-stint debrief, and driver-specific feedback. Coming next.</span>
+        <span>Pre-stint check-in, post-stint debrief, and driver-specific feedback.</span>
       </button>
     </div>
 
     <div style="margin-top:14px">
       <button class="bigbtn live-feature" onclick="showScreen('shopTalk')" style="border:2px solid var(--accent-dark);background:linear-gradient(135deg, rgba(183,255,34,.12), rgba(255,255,255,0) 55%), var(--panel)">
         <strong>Shop Talk</strong>
-        <span>Hands-on crew operations, technical reporting, spares, incidents, and shop-to-track communication. Coming next.</span>
+        <span>Hands-on crew operations, technical reporting, spares, incidents, and shop-to-track communication.</span>
       </button>
     </div>
 
@@ -114,23 +114,23 @@
     <h2 class="sectiontitle">Driver’s Lounge</h2>
     <div class="hero" style="background:var(--panel);border-left:8px solid var(--accent);padding:22px">
       <h2 style="font-size:30px">Driver communication, before and after the stint.</h2>
-      <p>Planned for the next development layer: quick pre-stint check-in, post-stint debrief, and deeper driver-specific feedback.</p>
+      <p>Capture a quick pre-stint check-in, post-stint debrief, or deeper driver perspective while it is useful.</p>
     </div>
     <div class="grid">
-      <div class="bigbtn coming-soon" style="cursor:default">
+      <button type="button" class="bigbtn live-feature" onclick="openOperationalForm('driverPre')">
         <strong>Pre-Stint Check-In</strong>
         <span>Focus, physical readiness, concerns, car confidence, and anything the team should know before you get in.</span>
-      </div>
-      <div class="bigbtn coming-soon" style="cursor:default">
+      </button>
+      <button type="button" class="bigbtn live-feature" onclick="openOperationalForm('driverPost')">
         <strong>Post-Stint Debrief</strong>
         <span>Car behavior, traffic, physical condition, communication, incidents, and what the next driver/team should know.</span>
-      </div>
-      <div class="bigbtn coming-soon" style="cursor:default">
+      </button>
+      <button type="button" class="bigbtn live-feature" onclick="openOperationalForm('driverFeedback')">
         <strong>Driver Feedback</strong>
         <span>Deeper feedback about the car, pit process, preparation, communication, and driver experience.</span>
-      </div>
+      </button>
     </div>
-    <p class="small" style="margin-top:18px">Placeholder — forms are not active yet.</p>
+    <p class="small" style="margin-top:18px">Live forms save to the shared OTR database and retry automatically if the tablet goes offline.</p>
   </section>
 
 
@@ -142,26 +142,41 @@
       <p>A crew-facing workspace for technical communication, reporting, resources, and the things that keep the cars moving.</p>
     </div>
     <div class="grid">
-      <div class="bigbtn coming-soon" style="cursor:default">
+      <button type="button" class="bigbtn live-feature" onclick="openOperationalForm('technicalReport')">
         <strong>Technical / Car Reports</strong>
         <span>Mechanical findings, setup concerns, repairs, failures, and post-session technical notes.</span>
-      </div>
+      </button>
       <button class="bigbtn live-feature" onclick="openInventoryAssistant()">
         <strong>Inventory & Spares</strong>
         <span>Search current inventory, verify imported records, correct quantities and locations, or add what you find.</span>
       </button>
-      <div class="bigbtn coming-soon" style="cursor:default">
+      <button type="button" class="bigbtn live-feature" onclick="openOperationalForm('incidentReport')">
         <strong>Incident / Damage Reports</strong>
         <span>Document crashes, contact, damage, failures, and immediate follow-up needs.</span>
-      </div>
-      <div class="bigbtn coming-soon" style="cursor:default">
+      </button>
+      <button type="button" class="bigbtn live-feature" onclick="openOperationalForm('crewOperations')">
         <strong>Crew Operations</strong>
         <span>Shop, paddock, pit, tools, workflow, logistics, and shop-to-track communication.</span>
+      </button>
+    </div>
+    <p class="small" style="margin-top:18px">Live notes save to the shared OTR database and retry automatically if the tablet goes offline.</p>
+  </section>
+ 
+  <section id="operationalForm" class="screen">
+    <button id="operationalFormBack" class="secondary back" type="button" onclick="leaveOperationalForm()">← Back</button>
+    <div class="hero" style="background:linear-gradient(135deg,rgba(183,255,34,.12),transparent 58%),var(--panel);border-left:8px solid var(--accent);padding:22px">
+      <div id="operationalFormEyebrow" class="eyebrow">TEAM OPERATIONS</div>
+      <h2 id="operationalFormTitle" class="sectiontitle" style="margin-bottom:8px">Team Operations</h2>
+      <p id="operationalFormSubtitle" class="subtitle" style="margin-bottom:0">Share a clear, useful note with the team.</p>
+    </div>
+    <div class="card">
+      <div id="operationalFormFields" class="inventory-form-grid"></div>
+      <div class="actions">
+        <button id="operationalFormSubmitBtn" type="button" class="primary" onclick="submitOperationalForm()">Submit</button>
+        <button type="button" class="secondary" onclick="leaveOperationalForm()">Cancel</button>
       </div>
     </div>
-    <p class="small" style="margin-top:18px">Placeholder — crew-facing tools are not active yet.</p>
   </section>
-
 
   <section id="inventoryHome" class="screen">
     <button class="secondary back" type="button" onclick="portalBack('shopTalk')">← Shop Talk</button>
@@ -557,10 +572,10 @@
   </section>
 </div>
 
-<script src="assets/config.js?v=0.5.1"></script>
-<script src="assets/core.js?v=0.5.1"></script>
-<script src="assets/submissions.js?v=0.5.1"></script>
-<script src="assets/inventory.js?v=0.5.1"></script>
-<script src="assets/bootstrap.js?v=0.5.1"></script>
+<script src="assets/config.js?v=0.5.3"></script>
+<script src="assets/core.js?v=0.5.3"></script>
+<script src="assets/submissions.js?v=0.5.3"></script>
+<script src="assets/inventory.js?v=0.5.3"></script>
+<script src="assets/bootstrap.js?v=0.5.3"></script>
 </body>
 </html>
