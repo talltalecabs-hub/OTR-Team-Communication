@@ -37,5 +37,5 @@ drop policy if exists "OTR submissions anon read temporary beta" on public.submi
 create policy "OTR submissions anon read temporary beta"
 on public.submissions for select to anon using (true);
 
--- Anonymous reads support the intentionally open V0.5 Admin viewer.
+-- Anonymous reads support the intentionally open V1 Admin viewer.
 -- Remove this read policy when authenticated administration is introduced.
