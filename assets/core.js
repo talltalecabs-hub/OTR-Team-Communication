@@ -17,12 +17,151 @@ const questions = [
   "What should we change, fix, or protect?"
 ];
 
+const internalVehicleCategories = [
+  "E92",
+  "986 Boxster",
+  "F30",
+  "M235 / M235iR",
+  "Non-Race",
+  "Tow",
+  "Trailer"
+];
+
+const operationalFormDefinitions = {
+  driverPre: {
+    parent: "driversLounge",
+    eyebrow: "DRIVER'S LOUNGE",
+    title: "Pre-Stint Check-In",
+    subtitle: "A quick handoff before you get in the car. Share only what the team needs to know.",
+    type: "driver_pre_stint",
+    category: "Driver's Lounge",
+    submitLabel: "Save Pre-Stint Check-In",
+    identityField: "driver",
+    summaryField: "session",
+    fields: [
+      {id:"driver",label:"Driver / initials",type:"text",placeholder:"e.g. JB",required:true},
+      {id:"car",label:"Car / chassis category",type:"select",options:internalVehicleCategories,required:true},
+      {id:"unit",label:"Car / unit identifier",type:"text",placeholder:"Optional number or chassis ID",wide:true},
+      {id:"session",label:"Session",type:"select",options:["Practice","Qualifying","Race","Testing","Other"]},
+      {id:"readiness",label:"Physical / mental readiness",type:"select",options:["Ready","Mostly ready","Need support before driving"]},
+      {id:"confidence",label:"Car confidence",type:"select",options:["High","Good","Needs attention"]},
+      {id:"focus",label:"What is your focus for this stint?",type:"textarea",placeholder:"What are you trying to learn, execute, or protect?",wide:true},
+      {id:"improve",label:"What do you want to improve or understand?",type:"textarea",placeholder:"What skill, decision, or part of the process are you working on?",wide:true},
+      {id:"experiment",label:"What experiment or small test are you running?",type:"textarea",placeholder:"What are you trying differently, and what will tell you whether it helped?",wide:true},
+      {id:"concerns",label:"Concerns before the stint",type:"textarea",placeholder:"Anything affecting focus, confidence, or readiness.",wide:true},
+      {id:"team_need",label:"What should the team know or do?",type:"textarea",placeholder:"A setup question, request, or thing to watch.",wide:true}
+    ]
+  },
+  driverPost: {
+    parent: "driversLounge",
+    eyebrow: "DRIVER'S LOUNGE",
+    title: "Post-Stint Debrief",
+    subtitle: "Capture the useful details while they are still fresh for the next driver and crew.",
+    type: "driver_post_stint",
+    category: "Driver's Lounge",
+    submitLabel: "Save Post-Stint Debrief",
+    identityField: "driver",
+    summaryField: "session",
+    fields: [
+      {id:"driver",label:"Driver / initials",type:"text",placeholder:"e.g. JB",required:true},
+      {id:"car",label:"Car / chassis category",type:"select",options:internalVehicleCategories,required:true},
+      {id:"unit",label:"Car / unit identifier",type:"text",placeholder:"Optional number or chassis ID",wide:true},
+      {id:"session",label:"Session",type:"select",options:["Practice","Qualifying","Race","Testing","Other"]},
+      {id:"overall",label:"Overall stint",type:"select",options:["Good","Mixed","Needs follow-up"]},
+      {id:"focus_result",label:"Looking back at your pre-stint focus, what did you notice?",type:"textarea",placeholder:"Did you execute, learn, or protect what you set out to?",wide:true},
+      {id:"improve_result",label:"What did you improve or understand?",type:"textarea",placeholder:"What changed in the skill, decision, or process you were working on?",wide:true},
+      {id:"experiment_result",label:"What did your experiment or small test show?",type:"textarea",placeholder:"What did you try, and what should we keep, change, or test next?",wide:true},
+      {id:"car_behavior",label:"Car behavior and performance",type:"textarea",placeholder:"Balance, grip, traffic, temperatures, tires, brakes, reliability...",wide:true},
+      {id:"communication",label:"Communication and pit experience",type:"textarea",placeholder:"What worked, what was unclear, or what slowed the stint.",wide:true},
+      {id:"issues",label:"Issues or concerns to follow up",type:"textarea",placeholder:"Anything the next driver or crew should know.",wide:true},
+      {id:"next_notes",label:"Next-driver / next-session notes",type:"textarea",placeholder:"The most useful handoff for what comes next.",wide:true}
+    ]
+  },
+  driverFeedback: {
+    parent: "driversLounge",
+    eyebrow: "DRIVER'S LOUNGE",
+    title: "Driver Feedback",
+    subtitle: "A deeper driver perspective on the car, preparation, communication, and team experience.",
+    type: "driver_feedback",
+    category: "Driver's Lounge",
+    submitLabel: "Submit Driver Feedback",
+    identityField: "driver",
+    summaryField: "focus",
+    fields: [
+      {id:"driver",label:"Driver / initials",type:"text",placeholder:"Optional",wide:true},
+      {id:"focus",label:"Main area",type:"select",options:["Car / setup","Preparation","Pit / radio communication","Team workflow","Driver experience","Other"]},
+      {id:"feedback",label:"What should the team know?",type:"textarea",placeholder:"Specific observations, examples, or suggestions.",required:true,wide:true},
+      {id:"follow_up",label:"Is it okay for us to follow up with you?",type:"checkbox"}
+    ]
+  },
+  technicalReport: {
+    parent: "shopTalk",
+    eyebrow: "SHOP TALK",
+    title: "Technical / Car Report",
+    subtitle: "Record a finding, setup concern, repair, failure, or post-session technical note.",
+    type: "technical_car_report",
+    category: "Shop Talk",
+    submitLabel: "Submit Technical Report",
+    identityField: "reporter",
+    summaryField: "car",
+    fields: [
+      {id:"reporter",label:"Reporter / initials",type:"text",placeholder:"Optional"},
+      {id:"car",label:"Car / chassis category",type:"select",options:internalVehicleCategories,required:true},
+      {id:"unit",label:"Car / unit identifier",type:"text",placeholder:"Optional number or chassis ID",wide:true},
+      {id:"session",label:"When noticed",type:"select",options:["Before session","During session","After session","In shop","Other"]},
+      {id:"urgency",label:"Urgency",type:"select",options:["Routine","Before next session","Stop and inspect"]},
+      {id:"finding",label:"Finding or observation",type:"textarea",placeholder:"What happened, what you saw, or what changed.",required:true,wide:true},
+      {id:"action",label:"Action taken or needed",type:"textarea",placeholder:"Repair, inspection, setup change, parts, or decision needed.",wide:true}
+    ]
+  },
+  incidentReport: {
+    parent: "shopTalk",
+    eyebrow: "SHOP TALK",
+    title: "Incident / Damage Report",
+    subtitle: "Document contact, damage, failures, or anything that needs immediate follow-up.",
+    type: "incident_damage_report",
+    category: "Shop Talk",
+    submitLabel: "Submit Incident Report",
+    identityField: "reporter",
+    summaryField: "car",
+    fields: [
+      {id:"reporter",label:"Reporter / initials",type:"text",placeholder:"Optional"},
+      {id:"car",label:"Car / vehicle category",type:"select",options:internalVehicleCategories,required:true},
+      {id:"unit",label:"Car / unit identifier",type:"text",placeholder:"Optional number or chassis ID",wide:true},
+      {id:"when",label:"When / session",type:"text",placeholder:"e.g. Race 2, lap 14"},
+      {id:"safe_to_run",label:"Safe to run?",type:"select",options:["Unknown - inspect first","Yes - no apparent safety issue","No - hold vehicle"]},
+      {id:"incident",label:"What happened?",type:"textarea",placeholder:"Describe the incident or failure factually.",required:true,wide:true},
+      {id:"damage",label:"Damage or affected area",type:"textarea",placeholder:"Visible damage, symptoms, or parts involved.",wide:true},
+      {id:"immediate_action",label:"Immediate action / follow-up needed",type:"textarea",placeholder:"Who needs to know, what should happen next, and by when.",wide:true}
+    ]
+  },
+  crewOperations: {
+    parent: "shopTalk",
+    eyebrow: "SHOP TALK",
+    title: "Crew Operations",
+    subtitle: "Capture the shop, paddock, pit, tool, loading, logistics, and workflow issues that keep the team moving.",
+    type: "crew_operations",
+    category: "Shop Talk",
+    submitLabel: "Submit Crew Operations Note",
+    identityField: "reporter",
+    summaryField: "area",
+    fields: [
+      {id:"reporter",label:"Reporter / initials",type:"text",placeholder:"Optional"},
+      {id:"area",label:"Team area",type:"select",options:["Shop","Paddock","Pit","Tools / equipment","Loading / transport","Parts / inventory","Hospitality","Other"],required:true},
+      {id:"request",label:"What needs attention?",type:"textarea",placeholder:"The problem, request, or opportunity.",required:true,wide:true},
+      {id:"blocker",label:"What is blocked or creating extra work?",type:"textarea",placeholder:"People, time, information, equipment, access, or workflow.",wide:true},
+      {id:"next_step",label:"Suggested next step",type:"textarea",placeholder:"What would make this easier or prevent it next time.",wide:true}
+    ]
+  }
+};
+
 let activeCategory = "";
 let answers = {};
 let portalHistoryDepth = 0;
 let pendingPortalResetScreen = null;
 let portalHistoryReady = false;
 let portalNoticeTimer = null;
+let activeOperationalFormKey = "";
 
 function renderPortalScreen(id){
   const target=document.getElementById(id);
@@ -198,6 +337,39 @@ function cryptoId(){
   return "otr-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8);
 }
 
+function operationalFieldHtml(field){
+  const id=`op-${field.id}`;
+  const wide=field.wide?" wide":"";
+  if(field.type==="textarea"){
+    return `<div class="question${wide}"><label for="${id}">${escapeHtml(field.label)}</label><textarea id="${id}" data-operational-field="${escapeHtml(field.id)}" maxlength="2000" placeholder="${escapeHtml(field.placeholder||"")}"></textarea></div>`;
+  }
+  if(field.type==="checkbox"){
+    return `<div class="question${wide}"><label class="checkrow" style="margin:0"><input id="${id}" data-operational-field="${escapeHtml(field.id)}" type="checkbox" /><span>${escapeHtml(field.label)}</span></label></div>`;
+  }
+  if(field.type==="select"){
+    const options=(field.options||[]).map(option=>`<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join("");
+    return `<div class="question${wide}"><label for="${id}">${escapeHtml(field.label)}</label><select id="${id}" data-operational-field="${escapeHtml(field.id)}"><option value="">Choose one…</option>${options}</select></div>`;
+  }
+  return `<div class="question${wide}"><label for="${id}">${escapeHtml(field.label)}</label><input id="${id}" data-operational-field="${escapeHtml(field.id)}" maxlength="160" placeholder="${escapeHtml(field.placeholder||"")}" /></div>`;
+}
+
+function openOperationalForm(key){
+  const def=operationalFormDefinitions[key];
+  if(!def) return;
+  activeOperationalFormKey=key;
+  document.getElementById("operationalFormEyebrow").textContent=def.eyebrow;
+  document.getElementById("operationalFormTitle").textContent=def.title;
+  document.getElementById("operationalFormSubtitle").textContent=def.subtitle;
+  document.getElementById("operationalFormFields").innerHTML=def.fields.map(operationalFieldHtml).join("");
+  document.getElementById("operationalFormSubmitBtn").textContent=def.submitLabel;
+  showScreen("operationalForm");
+}
+
+function leaveOperationalForm(){
+  const def=operationalFormDefinitions[activeOperationalFormKey];
+  portalBack(def?.parent||"home");
+}
+
 function resetFormSection(id){
   const section=document.getElementById(id);
   if(!section) return;
@@ -217,7 +389,7 @@ function resetAndHome(){
   activeCategory="";
   answers={};
 
-  ["feedback", "postevent", "problem", "idea", "wishlist"].forEach(resetFormSection);
+  ["feedback", "postevent", "problem", "idea", "wishlist", "operationalForm"].forEach(resetFormSection);
 
   resetPortalNavigation("home");
 }

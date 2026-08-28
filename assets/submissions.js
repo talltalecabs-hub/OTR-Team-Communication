@@ -72,6 +72,52 @@ async function submitDetailed(){
   await submitData(data);
 }
 
+async function submitOperationalForm(){
+  const def=operationalFormDefinitions[activeOperationalFormKey];
+  if(!def) return;
+
+  const values={};
+  let missingField=null;
+  for(const field of def.fields){
+    const el=document.getElementById(`op-${field.id}`);
+    if(!el) continue;
+    const value=field.type==="checkbox" ? el.checked : el.value.trim();
+    values[field.id]=value;
+    if(field.required && !String(value||"").trim()){
+      missingField=field;
+      break;
+    }
+  }
+
+  if(missingField){
+    alert(`Add ${missingField.label.toLowerCase()} first.`);
+    document.getElementById(`op-${missingField.id}`)?.focus();
+    return;
+  }
+
+  const identity=def.identityField ? String(values[def.identityField]||"").trim() : "";
+  const summary=def.summaryField ? String(values[def.summaryField]||"").trim() : "";
+  const data={
+    id:cryptoId(),
+    type:def.type,
+    category:def.category,
+    quick:`${def.title}${summary?` • ${summary}`:""}`,
+    answers:values,
+    detail:null,
+    name:identity||null,
+    anonymous:!identity,
+    timestamp:new Date().toISOString(),
+    version:APP_VERSION
+  };
+
+  const btn=document.getElementById("operationalFormSubmitBtn");
+  if(btn){btn.disabled=true;btn.textContent="Submitting…";}
+  showScreen("thanks",{historyMode:"replace"});
+  setSubmitStatus("Submitting…");
+  await submitData(data);
+  if(btn){btn.disabled=false;btn.textContent=def.submitLabel;}
+}
+
 
 
 
@@ -263,6 +309,21 @@ function renderSharedSubmissions(){
           .map(([k,v])=>{
             const labels={
               event:"Event",role:"Role",areas:"Cars / Areas",
+              driver:"Driver / initials",reporter:"Reporter / initials",
+              car:"Car / vehicle category",unit:"Car / unit identifier",session:"Session",focus:"Focus",
+              improve:"Improve / understand",experiment:"Experiment / small test",
+              readiness:"Readiness",confidence:"Car confidence",
+              concerns:"Concerns before stint",team_need:"Team need",
+              overall:"Overall stint",car_behavior:"Car behavior / performance",
+              focus_result:"Pre-stint focus reflection",improve_result:"Improvement / understanding reflection",
+              experiment_result:"Experiment / small-test result",
+              communication:"Communication / pit experience",issues:"Issues to follow up",
+              next_notes:"Next-driver / next-session notes",
+              when:"When / session",urgency:"Urgency",finding:"Finding / observation",
+              action:"Action taken / needed",safe_to_run:"Safe to run",
+              incident:"What happened",damage:"Damage / affected area",
+              immediate_action:"Immediate action / follow-up",area:"Team area",
+              request:"Request / issue",blocker:"Blocker / extra work",next_step:"Suggested next step",
               worked_well:"Worked well / repeat",
               friction:"Difficulty / delay / workload",
               missing_unclear:"Missing / difficult / unavailable / unclear",
