@@ -381,6 +381,29 @@
       margin-top:14px;
     }
 
+    .portal-nav-notice{
+      position:fixed;
+      left:50%;
+      bottom:28px;
+      z-index:1000;
+      transform:translate(-50%,18px);
+      padding:12px 18px;
+      border:1px solid var(--accent-dark);
+      border-radius:999px;
+      background:var(--text);
+      color:var(--panel);
+      font-weight:900;
+      box-shadow:0 10px 30px rgba(0,0,0,.25);
+      opacity:0;
+      pointer-events:none;
+      transition:opacity .18s ease,transform .18s ease;
+    }
+
+    .portal-nav-notice.show{
+      opacity:1;
+      transform:translate(-50%,0);
+    }
+
     /* V0.5.0 interface-state language */
     .live-feature{
       border-color:var(--accent-dark) !important;

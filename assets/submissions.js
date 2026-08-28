@@ -34,7 +34,7 @@ async function submitQuick(){
     version:APP_VERSION
   };
 
-  showScreen("thanks");
+  showScreen("thanks",{historyMode:"replace"});
   setSubmitStatus("Submitting…");
   await submitData(data);
 }
@@ -67,7 +67,7 @@ async function submitDetailed(){
     version:APP_VERSION
   };
 
-  showScreen("thanks");
+  showScreen("thanks",{historyMode:"replace"});
   setSubmitStatus("Submitting…");
   await submitData(data);
 }
@@ -142,7 +142,7 @@ async function submitPostEvent(){
   const btn=document.getElementById("postEventSubmitBtn");
   if(btn){btn.disabled=true;btn.textContent="Submitting…";}
 
-  showScreen("thanks");
+  showScreen("thanks",{historyMode:"replace"});
   setSubmitStatus("Submitting…");
   await submitData(data);
 
@@ -159,7 +159,7 @@ async function genericSubmit(field,type){
   };
 
   el.value="";
-  showScreen("thanks");
+  showScreen("thanks",{historyMode:"replace"});
 
   setSubmitStatus("Submitting…");
   await submitData(data);
