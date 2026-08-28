@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#111111" />
-  <title>OTR Team Portal — V0.5.4</title>
+  <title>OTR Team Portal — V1</title>
   <link rel="stylesheet" href="assets/styles.css" />
 </head>
 <body>
@@ -16,7 +16,7 @@
     </div>
     <div style="display:flex;align-items:center;gap:10px">
       <button id="globalHomeButton" type="button" class="secondary hidden" onclick="resetAndHome()" style="min-height:44px;padding:9px 14px;font-size:15px">⌂ Home</button>
-      <div class="pill">Prototype V0.5.4 • Shared database + offline queue</div>
+      <div class="pill">Team Beta V1 • Shared database + offline queue</div>
     </div>
   </div>
 
@@ -191,6 +191,7 @@
       <button type="button" class="platform-btn live-feature accent" onclick="browseInventory('986 Boxster')">986 Boxster<span>Race chassis inventory</span></button>
       <button type="button" class="platform-btn live-feature accent" onclick="browseInventory('F30')">F30 3XX<span>Race chassis inventory</span></button>
       <button type="button" class="platform-btn live-feature accent" onclick="browseInventory('M235 / M235iR')">M235iR<span>Race chassis inventory</span></button>
+      <button type="button" class="platform-btn live-feature accent" onclick="browseInventory('E46')">E46<span>Street / legacy chassis inventory</span></button>
       <button type="button" class="platform-btn live-feature" onclick="browseInventory('Non-Race')">Non-Race<span>General / non-race vehicle inventory</span></button>
       <button type="button" class="platform-btn live-feature" onclick="browseInventory('Tow')">Tow<span>Tow vehicles, recovery and related spares</span></button>
       <button type="button" class="platform-btn live-feature" onclick="browseInventory('Trailer')">Trailer<span>Trailer parts, loading and support equipment</span></button>
@@ -280,7 +281,7 @@
           <label for="addPlatform">Platform</label>
           <select id="addPlatform">
             <option>E92</option><option>986 Boxster</option><option>F30</option>
-            <option>M235 / M235iR</option><option>Non-Race</option><option>Tow</option><option>Trailer</option>
+            <option>M235 / M235iR</option><option>E46</option><option>Non-Race</option><option>Tow</option><option>Trailer</option>
           </select>
         </div>
         <div>
@@ -572,10 +573,10 @@
   </section>
 </div>
 
-<script src="assets/config.js?v=0.5.4"></script>
-<script src="assets/core.js?v=0.5.4"></script>
-<script src="assets/submissions.js?v=0.5.4"></script>
-<script src="assets/inventory.js?v=0.5.4"></script>
-<script src="assets/bootstrap.js?v=0.5.4"></script>
+<script src="assets/config.js?v=1.0.0"></script>
+<script src="assets/core.js?v=1.0.0"></script>
+<script src="assets/submissions.js?v=1.0.0"></script>
+<script src="assets/inventory.js?v=1.0.0"></script>
+<script src="assets/bootstrap.js?v=1.0.0"></script>
 </body>
 </html>
