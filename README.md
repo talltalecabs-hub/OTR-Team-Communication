@@ -4,7 +4,7 @@ Trackside-friendly team feedback, post-event reporting, administration, and shar
 
 ## Current release
 
-V0.5 uses GitHub Pages for the portal and Supabase for shared submissions and inventory. Failed submissions are retained in a device-local queue and retried when connectivity returns.
+V1 uses GitHub Pages for the portal and Supabase for shared submissions and inventory. Failed submissions are retained in a device-local queue and retried when connectivity returns.
 
 ## Project structure
 
@@ -17,6 +17,8 @@ assets/submissions.js      Feedback, post-event, admin, and offline queue
 assets/inventory.js        Supabase-backed Inventory Assistant
 assets/bootstrap.js        Startup checks and queue synchronization
 supabase/schema.sql        Inventory table and current beta policies
+supabase/vehicles_schema.sql
+                           Exact vehicle registry, inventory assignment key, and 23 vehicle seeds
 supabase/submissions_schema.sql
                            Submission table and current beta policies
 supabase/seed_inventory.sql
@@ -45,6 +47,9 @@ GitHub Pages publishes the root of the `main` branch. Changes should be previewe
 - Offline submissions appear under Admin → Local Queue.
 - Inventory loads 297 records / 690 units from Supabase.
 - Inventory totals are 58/146 for 986 Boxster, 84/161 for E92, 103/234 for F30, and 52/149 for M235/M235iR.
+- Chassis selectors offer the seeded exact vehicle registry (23 vehicles across race, street, tow, and trailer platforms).
+
+To enable exact vehicle selectors in Supabase, run `supabase/schema.sql` (if needed), then run `supabase/vehicles_schema.sql` in the SQL editor. The second script is safe to rerun and upserts the current registry without creating duplicates.
 
 Run the repeatable static checks with:
 
@@ -54,4 +59,4 @@ node scripts/validate.mjs
 
 ## Beta security note
 
-The current V0.5 deployment intentionally allows anonymous inventory reads/inserts/updates and anonymous Admin reads. Replace those beta policies with authenticated crew access before broad public use.
+The current V1 deployment intentionally allows anonymous inventory reads/inserts/updates and anonymous Admin reads. Replace those beta policies with authenticated crew access before broad public use.

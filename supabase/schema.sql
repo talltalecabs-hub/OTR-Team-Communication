@@ -21,6 +21,7 @@ create table if not exists public.inventory_items (
   compatibility jsonb not null default '[]'::jsonb,
   assignment_type text not null default 'General Inventory',
   assigned_vehicle text,
+  assigned_vehicle_code text,
   use_case text,
   tag_id text,
   verified_at timestamptz,
@@ -45,6 +46,7 @@ alter table public.inventory_items add column if not exists part_number text;
 alter table public.inventory_items add column if not exists compatibility jsonb default '[]'::jsonb;
 alter table public.inventory_items add column if not exists assignment_type text default 'General Inventory';
 alter table public.inventory_items add column if not exists assigned_vehicle text;
+alter table public.inventory_items add column if not exists assigned_vehicle_code text;
 alter table public.inventory_items add column if not exists use_case text;
 alter table public.inventory_items add column if not exists tag_id text;
 alter table public.inventory_items add column if not exists verified_at timestamptz;
@@ -100,3 +102,35 @@ on public.inventory_items for update to anon using (true) with check (true);
 
 -- These anonymous policies are intentional for the current beta only.
 -- Replace them with authenticated crew policies before broader deployment.
+
+-- Exact vehicle registry used by the portal's chassis -> vehicle selectors.
+create table if not exists public.vehicles (
+  vehicle_code text primary key,
+  platform text not null,
+  vehicle_name text not null,
+  designation text,
+  status text not null default 'Active',
+  display_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique(platform, vehicle_name)
+);
+
+create index if not exists vehicles_platform_name_idx
+  on public.vehicles(platform, display_order, vehicle_name);
+
+alter table public.inventory_items
+  drop constraint if exists inventory_items_assigned_vehicle_code_fkey;
+alter table public.inventory_items
+  add constraint inventory_items_assigned_vehicle_code_fkey
+  foreign key (assigned_vehicle_code) references public.vehicles(vehicle_code);
+
+alter table public.vehicles enable row level security;
+grant select on table public.vehicles to anon;
+
+drop policy if exists "OTR vehicles anon read v1" on public.vehicles;
+create policy "OTR vehicles anon read v1"
+on public.vehicles for select to anon using (true);
+
+-- These anonymous vehicle reads are intentional for the current beta only.
+-- Replace them with authenticated crew access before broader deployment.
