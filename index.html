@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#111111" />
-  <title>OTR Team Portal — V0.5.0</title>
+  <title>OTR Team Portal — V0.5.1</title>
   <link rel="stylesheet" href="assets/styles.css" />
 </head>
 <body>
@@ -16,7 +16,7 @@
     </div>
     <div style="display:flex;align-items:center;gap:10px">
       <button id="globalHomeButton" type="button" class="secondary hidden" onclick="resetAndHome()" style="min-height:44px;padding:9px 14px;font-size:15px">⌂ Home</button>
-      <div class="pill">Prototype V0.5.0 • Shared database + offline queue</div>
+      <div class="pill">Prototype V0.5.1 • Shared database + offline queue</div>
     </div>
   </div>
 
@@ -65,14 +65,14 @@
   </section>
 
   <section id="categories" class="screen">
-    <button class="secondary back" onclick="showScreen('home')">← Home</button>
+    <button class="secondary back" onclick="resetAndHome()">← Home</button>
     <h2 class="sectiontitle">What area do you want to talk about?</h2>
     <p class="subtitle">Pick the closest fit. “Something Else” is always available.</p>
     <div id="categoryButtons" class="categories"></div>
   </section>
 
   <section id="feedback" class="screen">
-    <button class="secondary back" onclick="showScreen('categories')">← Categories</button>
+    <button class="secondary back" onclick="portalBack('categories')">← Categories</button>
     <h2 id="feedbackTitle" class="sectiontitle">Feedback</h2>
     <p class="subtitle">Quick submit first. The rest is optional.</p>
 
@@ -103,14 +103,14 @@
       </div>
       <div class="actions">
         <button type="button" class="primary" onclick="submitDetailed()">Submit feedback</button>
-        <button class="secondary" onclick="showScreen('categories')">Cancel</button>
+        <button class="secondary" onclick="portalBack('categories')">Cancel</button>
       </div>
     </div>
   </section>
 
 
   <section id="driversLounge" class="screen">
-    <button class="secondary back" onclick="showScreen('home')">← Home</button>
+    <button class="secondary back" onclick="resetAndHome()">← Home</button>
     <h2 class="sectiontitle">Driver’s Lounge</h2>
     <div class="hero" style="background:var(--panel);border-left:8px solid var(--accent);padding:22px">
       <h2 style="font-size:30px">Driver communication, before and after the stint.</h2>
@@ -135,7 +135,7 @@
 
 
   <section id="shopTalk" class="screen">
-    <button class="secondary back" onclick="showScreen('home')">← Home</button>
+    <button class="secondary back" onclick="resetAndHome()">← Home</button>
     <h2 class="sectiontitle">Shop Talk</h2>
     <div class="hero" style="background:var(--panel);border-left:8px solid var(--accent);padding:22px">
       <h2 style="font-size:30px">Hands-on operations, from the shop to the track.</h2>
@@ -164,7 +164,7 @@
 
 
   <section id="inventoryHome" class="screen">
-    <button class="secondary back" type="button" onclick="showScreen('shopTalk')">← Shop Talk</button>
+    <button class="secondary back" type="button" onclick="portalBack('shopTalk')">← Shop Talk</button>
     <div class="hero" style="background:linear-gradient(135deg,rgba(183,255,34,.13),transparent 58%),var(--panel);border-left:8px solid var(--accent);padding:22px">
       <div class="eyebrow">INVENTORY ASSISTANT V1</div>
       <h2 style="font-size:32px;margin:8px 0 7px">What are you looking for?</h2>
@@ -185,7 +185,7 @@
   </section>
 
   <section id="inventoryBrowse" class="screen">
-    <button class="secondary back" type="button" onclick="showScreen('inventoryHome')">← Inventory Assistant</button>
+    <button class="secondary back" type="button" onclick="portalBack('inventoryHome')">← Inventory Assistant</button>
     <h2 id="inventoryBrowseTitle" class="sectiontitle">Inventory</h2>
     <div class="inventory-toolbar" style="grid-template-columns:1fr">
       <input id="inventorySearch" class="inventory-search" type="search" placeholder="Search part, location, category, condition..." oninput="renderInventoryResults()" />
@@ -198,12 +198,12 @@
   </section>
 
   <section id="inventoryDetail" class="screen">
-    <button class="secondary back" type="button" onclick="showScreen('inventoryBrowse')">← Results</button>
+    <button class="secondary back" type="button" onclick="portalBack('inventoryBrowse')">← Results</button>
     <div id="inventoryDetailWrap"></div>
   </section>
 
   <section id="inventoryEdit" class="screen">
-    <button class="secondary back" type="button" onclick="showScreen('inventoryDetail')">← Part Detail</button>
+    <button class="secondary back" type="button" onclick="portalBack('inventoryDetail')">← Part Detail</button>
     <h2 id="inventoryEditTitle" class="sectiontitle">Verify Inventory</h2>
     <div class="card">
       <div class="inventory-form-grid">
@@ -246,13 +246,13 @@
       </div>
       <div class="actions">
         <button class="primary" type="button" onclick="saveInventoryVerification()">Update & Verify</button>
-        <button class="secondary" type="button" onclick="showScreen('inventoryDetail')">Cancel</button>
+        <button class="secondary" type="button" onclick="portalBack('inventoryDetail')">Cancel</button>
       </div>
     </div>
   </section>
 
   <section id="inventoryAdd" class="screen">
-    <button class="secondary back" type="button" onclick="showScreen('inventoryHome')">← Inventory Assistant</button>
+    <button class="secondary back" type="button" onclick="portalBack('inventoryHome')">← Inventory Assistant</button>
     <h2 class="sectiontitle">Add Inventory Item</h2>
     <p class="subtitle">Newly entered inventory starts Verified because someone is physically entering what they found.</p>
     <div class="card">
@@ -315,7 +315,7 @@
   </section>
 
   <section id="postevent" class="screen">
-    <button class="secondary back" type="button" onclick="showScreen('home')">← Home</button>
+    <button class="secondary back" type="button" onclick="resetAndHome()">← Home</button>
 
     <div class="hero" style="background:linear-gradient(135deg,rgba(183,255,34,.12),transparent 58%),var(--panel);border-left:8px solid var(--accent);padding:22px">
       <div class="eyebrow">POST-EVENT DEBRIEF</div>
@@ -440,7 +440,7 @@
   </section>
 
   <section id="problem" class="screen">
-    <button class="secondary back" onclick="showScreen('home')">← Home</button>
+    <button class="secondary back" onclick="resetAndHome()">← Home</button>
     <h2 class="sectiontitle">Report a Problem</h2>
     <div class="card">
       <label for="problemText">What needs attention?</label>
@@ -450,7 +450,7 @@
   </section>
 
   <section id="idea" class="screen">
-    <button class="secondary back" type="button" onclick="showScreen('home')">← Home</button>
+    <button class="secondary back" type="button" onclick="resetAndHome()">← Home</button>
     <h2 class="sectiontitle">Ideas / Improvements</h2>
 
     <div class="card">
@@ -469,7 +469,7 @@
 
 
   <section id="wishlist" class="screen wishlist-screen">
-    <button class="secondary back" onclick="showScreen('idea')">← Ideas / Improvements</button>
+    <button class="secondary back" onclick="portalBack('idea')">← Ideas / Improvements</button>
     <div class="hero">
       <div class="eyebrow">TOTALLY SERIOUS BUSINESS</div>
       <h2 style="font-size:34px;margin:8px 0 8px">Team Wishlist ✨</h2>
@@ -492,7 +492,7 @@
       <p id="submitStatus" class="small" style="margin-top:12px"></p>
       <div class="actions" style="justify-content:center">
         <button type="button" class="primary" onclick="resetAndHome()">Done</button>
-        <button class="secondary" onclick="showScreen('categories')">Add more feedback</button>
+        <button class="secondary" onclick="startMoreFeedback()">Add more feedback</button>
       </div>
     </div>
   </section>
@@ -500,7 +500,7 @@
 
 
   <section id="adminAssistant" class="screen">
-    <button class="secondary back" type="button" onclick="showScreen('home')">← Home</button>
+    <button class="secondary back" type="button" onclick="resetAndHome()">← Home</button>
     <div class="hero" style="background:linear-gradient(135deg,rgba(183,255,34,.10),transparent 58%),var(--panel);border-left:8px solid var(--accent);padding:22px">
       <div class="eyebrow">ADMIN ASSISTANT</div>
       <h2 style="font-size:32px;margin:8px 0 7px">Administrative tools</h2>
@@ -525,7 +525,7 @@
   </section>
 
   <section id="adminSubmissions" class="screen">
-    <button class="secondary back" type="button" onclick="showScreen('adminAssistant')">← Admin Assistant</button>
+    <button class="secondary back" type="button" onclick="portalBack('adminAssistant')">← Admin Assistant</button>
     <h2 class="sectiontitle">Form Submissions</h2>
     <p class="subtitle">Review shared portal submissions in one place.</p>
     <div id="adminSubmissionsStatus" class="notice">Loading submissions…</div>
@@ -544,7 +544,7 @@
   </section>
 
   <section id="admin" class="screen">
-    <button class="secondary back" type="button" onclick="showScreen('adminAssistant')">← Admin Assistant</button>
+    <button class="secondary back" type="button" onclick="portalBack('adminAssistant')">← Admin Assistant</button>
     <h2 class="sectiontitle">Local Queue</h2>
     <p class="subtitle">Submissions normally go to the shared OTR database. Anything listed here is waiting to sync from this device.</p>
     <div class="card">
