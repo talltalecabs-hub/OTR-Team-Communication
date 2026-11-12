@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#111111" />
   <title>OTR Team Portal — V1</title>
-  <link rel="stylesheet" href="assets/styles.css?v=1.1.0" />
+  <link rel="stylesheet" href="assets/styles.css?v=1.2.0" />
 </head>
 <body>
 <div class="app">
@@ -183,9 +183,22 @@
     <div class="hero" style="background:linear-gradient(135deg,rgba(183,255,34,.13),transparent 58%),var(--panel);border-left:8px solid var(--accent);padding:22px">
       <div class="eyebrow">INVENTORY ASSISTANT V1</div>
       <h2 style="font-size:32px;margin:8px 0 7px">What are you looking for?</h2>
-      <p>Search current inventory by chassis, or search everything at once.</p>
+      <p>Mobile inventory travels with the team. Backstock stays at the shop.</p>
     </div>
 
+    <div class="grid">
+      <button type="button" class="bigbtn live-feature accent" onclick="openMobileInventory()"><strong>Mobile Inventory</strong><span>Race chassis spares and other stock that travels with the team.</span></button>
+      <button type="button" class="bigbtn live-feature" onclick="browseInventory('ALL','Backstock')"><strong>Backstock</strong><span>Inventory that stays at the shop, searchable by chassis and part.</span></button>
+      <button type="button" class="bigbtn live-feature" onclick="browseInventory('ALL','ALL')"><strong>Search All Inventory</strong><span>Search Mobile and Backstock together.</span></button>
+      <button type="button" class="bigbtn live-feature" onclick="openAddInventory()"><strong>＋ Add Inventory Item</strong><span>Choose Mobile or Backstock when adding stock.</span></button>
+      <button type="button" class="bigbtn live-feature" onclick="openLabelAssistant()"><strong>Label &amp; Bin Assistant</strong><span>Review bins, assign parts, and print 4×6 labels.</span></button>
+    </div>
+  </section>
+
+  <section id="inventoryMobile" class="screen">
+    <button class="secondary back" type="button" onclick="portalBack('inventoryHome')">← Inventory Assistant</button>
+    <h2 class="sectiontitle">Mobile Inventory</h2>
+    <p class="subtitle">Choose a chassis to find stock that travels with the team.</p>
     <div class="platform-grid">
       <button type="button" class="platform-btn live-feature accent" onclick="browseInventory('E92')">E92 M3<span>Race chassis inventory</span></button>
       <button type="button" class="platform-btn live-feature accent" onclick="browseInventory('986 Boxster')">986 Boxster<span>Race chassis inventory</span></button>
@@ -195,15 +208,21 @@
       <button type="button" class="platform-btn live-feature" onclick="browseInventory('Non-Race')">Non-Race<span>General / non-race vehicle inventory</span></button>
       <button type="button" class="platform-btn live-feature" onclick="browseInventory('Tow')">Tow<span>Tow vehicles, recovery and related spares</span></button>
       <button type="button" class="platform-btn live-feature" onclick="browseInventory('Trailer')">Trailer<span>Trailer parts, loading and support equipment</span></button>
-      <button type="button" class="platform-btn live-feature accent" style="grid-column:1/-1" onclick="browseInventory('ALL')">🔎 Search Entire Inventory<span>Search all current and imported inventory records</span></button>
+      <button type="button" class="platform-btn live-feature accent" style="grid-column:1/-1" onclick="browseInventory('ALL')">Search All Mobile Inventory<span>Search travelling stock across every chassis</span></button>
       <button type="button" class="platform-btn live-feature" style="grid-column:1/-1;border-color:var(--accent-dark);background:linear-gradient(135deg,rgba(183,255,34,.12),rgba(255,255,255,0) 55%),var(--panel)" onclick="openAddInventory()">＋ Add Inventory Item<span>Add newly found or acquired inventory</span></button>
       <button type="button" class="platform-btn live-feature accent" style="grid-column:1/-1" onclick="openLabelAssistant()">🏷 Label &amp; Bin Assistant<span>Create Bin IDs, move parts into bins, review contents, and print 4×6 labels</span></button>
     </div>
   </section>
 
   <section id="inventoryBrowse" class="screen">
-    <button class="secondary back" type="button" onclick="portalBack('inventoryHome')">← Inventory Assistant</button>
+    <button class="secondary back" type="button" onclick="portalBack(inventoryStockCategory==='Mobile'?'inventoryMobile':'inventoryHome')">← Inventory Assistant</button>
     <h2 id="inventoryBrowseTitle" class="sectiontitle">Inventory</h2>
+    <div class="inventory-form-grid">
+      <div><label for="inventoryStockCategoryFilter">Inventory category</label><select id="inventoryStockCategoryFilter" onchange="setInventoryFilters()"><option value="ALL">Mobile + Backstock</option><option>Mobile</option><option>Backstock</option></select></div>
+      <div><label for="inventoryPlatformFilter">Chassis</label><select id="inventoryPlatformFilter" onchange="setInventoryFilters()"><option value="ALL">All chassis</option><option>E92</option><option>F22</option><option>F30</option><option>986 Boxster</option><option>M235 / M235iR</option><option>E46</option><option>Non-Race</option><option>Tow</option><option>Trailer</option></select></div>
+      <div><label for="inventoryCartSelect">Location</label><select id="inventoryCartSelect" onchange="setInventoryFilters()"><option value="ALL">All locations</option><option>Backstock</option><option>Unassigned</option></select></div>
+    </div>
+    <div class="actions"><button class="secondary" type="button" onclick="openBinBrowser(inventoryFilter,inventoryCartFilter)">Bins / Cart Assignments</button></div>
     <div class="inventory-toolbar" style="grid-template-columns:1fr">
       <input id="inventorySearch" class="inventory-search" type="search" placeholder="Search part, location, category, condition..." oninput="renderInventoryResults()" />
     </div>
@@ -238,14 +257,22 @@
         </div>
         <div class="wide">
           <label for="invLocation">Location</label>
-          <input id="invLocation" placeholder="Bin, shelf, trailer, vehicle..." />
+          <select id="invLocation" onchange="changeInventoryPlacement('inv')"><option>Unassigned</option><option>Backstock</option></select>
+        </div>
+        <div class="wide">
+          <label for="invBinId">Bin ID</label><select id="invBinId"><option value="">Unassigned bin</option></select>
+          <p class="small">Use the chassis-000 bin for loose or bulky items on either cart.</p>
+        </div>
+        <div>
+          <label for="invStockCategory">Inventory assignment</label>
+          <select id="invStockCategory" onchange="changeInventoryAssignment('inv')"><option value="Mobile">Mobile Inventory</option><option value="Backstock">Backstock Inventory</option></select>
         </div>
         <div>
           <label for="invPartNumber">Part Number</label>
           <input id="invPartNumber" placeholder="Optional" />
         </div>
         <div>
-          <label for="invAssignment">Assignment</label>
+          <label for="invAssignment">Vehicle assignment</label>
           <select id="invAssignment" onchange="toggleAssignedVehicle()">
             <option>General Inventory</option>
             <option>Program Spare</option>
@@ -280,7 +307,7 @@
         </div>
         <div>
           <label for="addPlatform">Platform</label>
-          <select id="addPlatform">
+          <select id="addPlatform" onchange="setupInventoryPlacement('add')">
             <option>E92</option><option>986 Boxster</option><option>F30</option>
             <option>F22</option><option>M235 / M235iR</option><option>E46</option><option>Non-Race</option><option>Tow</option><option>Trailer</option>
           </select>
@@ -297,19 +324,27 @@
           </select>
         </div>
         <div>
-          <label for="addCategory">Category</label>
+          <label for="addCategory">Part category</label>
           <input id="addCategory" placeholder="Optional" />
         </div>
         <div class="wide">
           <label for="addLocation">Location</label>
-          <input id="addLocation" placeholder="Bin, shelf, trailer, vehicle..." />
+          <select id="addLocation" onchange="changeInventoryPlacement('add')"><option>Unassigned</option><option>Backstock</option></select>
+        </div>
+        <div class="wide">
+          <label for="addBinId">Bin ID</label><select id="addBinId"><option value="">Unassigned bin</option></select>
+          <p class="small">Use chassis-000 for radiators, rotors, and other loose items.</p>
+        </div>
+        <div>
+          <label for="addStockCategory">Inventory assignment</label>
+          <select id="addStockCategory" onchange="changeInventoryAssignment('add')"><option value="Mobile">Mobile Inventory</option><option value="Backstock">Backstock Inventory</option></select>
         </div>
         <div>
           <label for="addPartNumber">Part Number</label>
           <input id="addPartNumber" placeholder="Optional" />
         </div>
         <div>
-          <label for="addAssignment">Assignment</label>
+          <label for="addAssignment">Vehicle assignment</label>
           <select id="addAssignment" onchange="toggleAddAssignedVehicle()">
             <option>General Inventory</option>
             <option>Program Spare</option>
@@ -353,7 +388,7 @@
         <strong>Add / Move Part to Bin</strong>
         <span>Find an inventory record, choose a destination Bin ID, quantity, and reorder flag.</span>
       </button>
-      <button type="button" class="bigbtn live-feature" onclick="browseInventory('ALL')">
+      <button type="button" class="bigbtn live-feature" onclick="browseInventory('ALL','ALL')">
         <strong>Open Part / Print Tag</strong>
         <span>Open any inventory item and print its 4×6 fold-wrap part tag.</span>
       </button>
@@ -402,7 +437,11 @@
           </select>
         </div>
         <div class="wide">
-          <label for="binLocation">Physical location</label>
+          <label for="binCartLocation">Cart location for this chassis</label>
+          <select id="binCartLocation"><option value="">Unassigned</option><option value="A">Cart A</option><option value="B">Cart B</option></select>
+        </div>
+        <div class="wide">
+          <label for="binLocation">Additional location details</label>
           <input id="binLocation" placeholder="Shelf, rack, cabinet, trailer, shop area…" />
         </div>
         <div class="wide">
@@ -424,6 +463,10 @@
   <section id="binBrowse" class="screen">
     <button class="secondary back" type="button" onclick="portalBack('labelAssistantHome')">← Label Assistant</button>
     <h2 class="sectiontitle">Open Bin</h2>
+    <div class="inventory-form-grid">
+      <div><label for="binChassisFilter">Chassis</label><select id="binChassisFilter" onchange="renderBinResults()"><option value="ALL">All chassis</option></select></div>
+      <div><label for="binCartFilter">Cart location</label><select id="binCartFilter" onchange="renderBinResults()"><option value="ALL">All carts / locations</option><option value="A">Cart A</option><option value="B">Cart B</option><option value="UNASSIGNED">Unassigned</option></select></div>
+    </div>
     <div class="inventory-toolbar" style="grid-template-columns:1fr">
       <input id="binSearch" class="inventory-search" type="search" placeholder="Search Bin ID, make, model, system, location…" oninput="renderBinResults()" />
     </div>
@@ -444,7 +487,10 @@
       <div class="inventory-form-grid">
         <div class="wide">
           <label for="assignBinSelect">Destination Bin ID</label>
-          <select id="assignBinSelect"><option value="">Choose destination bin…</option></select>
+          <select id="assignBinSelect" onchange="refreshLooseCartAssignment()"><option value="">Choose destination bin…</option></select>
+        </div>
+        <div class="wide">
+          <label for="assignPartCart">Location for loose items</label><select id="assignPartCart" disabled><option value="">Unassigned</option></select>
         </div>
         <div class="wide">
           <label for="assignPartSearch">Find inventory item</label>
@@ -754,11 +800,11 @@
   </section>
 </div>
 
-<script src="assets/config.js?v=1.1.0"></script>
-<script src="assets/core.js?v=1.1.0"></script>
-<script src="assets/submissions.js?v=1.1.0"></script>
-<script src="assets/inventory.js?v=1.1.0"></script>
-<script src="assets/labels.js?v=1.1.0"></script>
-<script src="assets/bootstrap.js?v=1.1.0"></script>
+<script src="assets/config.js?v=1.2.0"></script>
+<script src="assets/core.js?v=1.2.0"></script>
+<script src="assets/submissions.js?v=1.2.0"></script>
+<script src="assets/inventory.js?v=1.2.0"></script>
+<script src="assets/labels.js?v=1.2.0"></script>
+<script src="assets/bootstrap.js?v=1.2.0"></script>
 </body>
 </html>

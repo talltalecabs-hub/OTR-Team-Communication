@@ -4,7 +4,7 @@ Trackside-friendly team feedback, post-event reporting, administration, and shar
 
 ## Current release
 
-Production V1.1.0 uses GitHub Pages for the portal and Supabase for shared submissions and inventory. The Label & Bin Assistant and November 8 F22/E92 inventory replacement were activated on November 12, 2026. Active inventory has 92 F22, 123 E92, 103 F30, and 58 Boxster records (376 total), with five unknown counts preserved. Failed submissions are retained in a device-local queue and retried when connectivity returns.
+V1.2.0 uses GitHub Pages for the portal and Supabase for shared submissions and inventory. Inventory is divided into Mobile (travels with the team) and Backstock (stays at the shop), with independent Cart A/B bin locations for each chassis. The inventory has 92 F22, 123 E92, 103 F30, and 58 Boxster records (376 total), with five unknown counts preserved. All existing records start as Mobile. Failed submissions are retained in a device-local queue and retried when connectivity returns.
 
 ## Project structure
 
@@ -24,6 +24,10 @@ supabase/label_assistant_schema.sql
                            First-class bins, bin assignment RPC, reorder flags, and physical tag IDs
 supabase/inventory_count_schema.sql
                            Unknown counts, printed quantity units, and parent/sub-bin hierarchy
+supabase/inventory_stock_category_schema.sql
+                           Mobile/Backstock classification, per-chassis Cart A/B bin locations
+supabase/e92_cart_assignments.sql
+                           One-time E92 cart placements confirmed by the team
 supabase/update_inventory_f22_e92_20261108.sql
                            Prepared scoped replacement with private backups and rerun protection
 data/inventory/f22-e92-2026-11-08.json
@@ -64,6 +68,8 @@ To enable exact vehicle selectors in Supabase, run `supabase/schema.sql` (if nee
 The Label Assistant uses only 4×6 thermal adhesive stock. Full bin labels occupy a 4×6 sheet; individual part labels use that same stock in a fold-wrap prototype around a 2×3 paper tag. There is no separate 2×3 media or printer path. Physical fold geometry and barcode scanning still require a printer test.
 
 Production activation is complete. See [F22/E92 inventory update](docs/inventory-f22-e92-update.md) for source totals, private backups, rollout results, and deployment order for another environment: label schema, count schema, then replacement SQL. Frontend and database rollout must be coordinated; merging the frontend alone does not update shared inventory. Do not rerun the historical seed after the replacement.
+
+See [Mobile, Backstock, and cart locations](docs/inventory-mobile-backstock-carts.md) for inventory category selection, cart assignment, the confirmed E92 map, and the V1.1-to-V1.2 upgrade. Quantities, part categories, bin identities, and source records are preserved.
 
 Run the repeatable static checks with:
 
