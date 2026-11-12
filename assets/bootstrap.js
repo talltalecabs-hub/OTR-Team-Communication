@@ -18,7 +18,17 @@ const runtimeChecks={
   portalBack,
   initializePortalHistory,
   sendToSupabase,
-  loadInventory
+  loadInventory,
+  openLabelAssistant,
+  loadInventoryBins,
+  openCreateBin,
+  openBinBrowser,
+  openBinDetail,
+  openAssignPartToBin,
+  assignSelectedPartToBin,
+  openPartTag,
+  preparePartTag,
+  printCurrentLabel
 };
 
 const missingRuntimeFunctions=Object.entries(runtimeChecks)

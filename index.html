@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#111111" />
   <title>OTR Team Portal — V1</title>
-  <link rel="stylesheet" href="assets/styles.css" />
+  <link rel="stylesheet" href="assets/styles.css?v=1.1.0" />
 </head>
 <body>
 <div class="app">
@@ -190,13 +190,14 @@
       <button type="button" class="platform-btn live-feature accent" onclick="browseInventory('E92')">E92 M3<span>Race chassis inventory</span></button>
       <button type="button" class="platform-btn live-feature accent" onclick="browseInventory('986 Boxster')">986 Boxster<span>Race chassis inventory</span></button>
       <button type="button" class="platform-btn live-feature accent" onclick="browseInventory('F30')">F30 3XX<span>Race chassis inventory</span></button>
-      <button type="button" class="platform-btn live-feature accent" onclick="browseInventory('M235 / M235iR')">M235iR<span>Race chassis inventory</span></button>
+      <button type="button" class="platform-btn live-feature accent" onclick="browseInventory('F22')">F22<span>M235 / M235iR inventory</span></button>
       <button type="button" class="platform-btn live-feature accent" onclick="browseInventory('E46')">E46<span>Street / legacy chassis inventory</span></button>
       <button type="button" class="platform-btn live-feature" onclick="browseInventory('Non-Race')">Non-Race<span>General / non-race vehicle inventory</span></button>
       <button type="button" class="platform-btn live-feature" onclick="browseInventory('Tow')">Tow<span>Tow vehicles, recovery and related spares</span></button>
       <button type="button" class="platform-btn live-feature" onclick="browseInventory('Trailer')">Trailer<span>Trailer parts, loading and support equipment</span></button>
       <button type="button" class="platform-btn live-feature accent" style="grid-column:1/-1" onclick="browseInventory('ALL')">🔎 Search Entire Inventory<span>Search all current and imported inventory records</span></button>
       <button type="button" class="platform-btn live-feature" style="grid-column:1/-1;border-color:var(--accent-dark);background:linear-gradient(135deg,rgba(183,255,34,.12),rgba(255,255,255,0) 55%),var(--panel)" onclick="openAddInventory()">＋ Add Inventory Item<span>Add newly found or acquired inventory</span></button>
+      <button type="button" class="platform-btn live-feature accent" style="grid-column:1/-1" onclick="openLabelAssistant()">🏷 Label &amp; Bin Assistant<span>Create Bin IDs, move parts into bins, review contents, and print 4×6 labels</span></button>
     </div>
   </section>
 
@@ -224,13 +225,13 @@
     <div class="card">
       <div class="inventory-form-grid">
         <div>
-          <label for="invQty">Quantity found</label>
+          <label for="invQty" id="invQtyLabel">Quantity found</label>
           <input id="invQty" type="number" min="0" step="1" />
         </div>
         <div>
           <label for="invCondition">Condition</label>
           <select id="invCondition">
-            <option>Unspecified</option><option>New</option><option>Used</option><option>Used / Good</option>
+            <option>Unspecified</option><option>New</option><option>Used</option><option>Used / Good</option><option>Mixed</option>
             <option>Good</option><option>Damaged</option><option>Has play</option><option>Finish race</option>
             <option>OE</option><option>SPL</option><option>Aftermarket</option><option>New / Motorsport</option>
           </select>
@@ -281,7 +282,7 @@
           <label for="addPlatform">Platform</label>
           <select id="addPlatform">
             <option>E92</option><option>986 Boxster</option><option>F30</option>
-            <option>M235 / M235iR</option><option>E46</option><option>Non-Race</option><option>Tow</option><option>Trailer</option>
+            <option>F22</option><option>M235 / M235iR</option><option>E46</option><option>Non-Race</option><option>Tow</option><option>Trailer</option>
           </select>
         </div>
         <div>
@@ -327,6 +328,186 @@
       <div class="actions">
         <button class="primary" type="button" onclick="addInventoryItem()">Add to Inventory</button>
       </div>
+    </div>
+  </section>
+
+  <section id="labelAssistantHome" class="screen">
+    <button class="secondary back" type="button" onclick="portalBack('inventoryHome')">← Inventory Assistant</button>
+    <div class="hero" style="background:linear-gradient(135deg,rgba(183,255,34,.13),transparent 58%),var(--panel);border-left:8px solid var(--accent);padding:22px">
+      <div class="eyebrow">INVENTORY LABEL ASSISTANT</div>
+      <h2 style="font-size:32px;margin:8px 0 7px">Bins, parts, and 4×6 tags.</h2>
+      <p>Create a physical bin identity, move inventory into it, review contents, and print replacement labels from the same shared inventory data.</p>
+      <div id="binBackendStatus" class="inventory-mode" style="margin-top:10px">Loading bin registry…</div>
+    </div>
+
+    <div class="grid">
+      <button type="button" class="bigbtn live-feature" onclick="openCreateBin()">
+        <strong>＋ Create New Bin ID</strong>
+        <span>Make → model → system → subsystem → assign a stable human-readable Bin ID.</span>
+      </button>
+      <button type="button" class="bigbtn live-feature" onclick="openBinBrowser()">
+        <strong>Open Bin</strong>
+        <span>Search a Bin ID, review contents, add parts, or print a replacement 4×6 label.</span>
+      </button>
+      <button type="button" class="bigbtn live-feature" onclick="openAssignPartToBin()">
+        <strong>Add / Move Part to Bin</strong>
+        <span>Find an inventory record, choose a destination Bin ID, quantity, and reorder flag.</span>
+      </button>
+      <button type="button" class="bigbtn live-feature" onclick="browseInventory('ALL')">
+        <strong>Open Part / Print Tag</strong>
+        <span>Open any inventory item and print its 4×6 fold-wrap part tag.</span>
+      </button>
+    </div>
+    <p class="small" style="margin-top:18px">One label stock: 4×6 thermal. Part labels use the 4×6 fold-wrap layout around a 2×3 paper tag.</p>
+  </section>
+
+  <section id="binCreate" class="screen">
+    <button class="secondary back" type="button" onclick="portalBack('labelAssistantHome')">← Label Assistant</button>
+    <h2 class="sectiontitle">Create New Bin ID</h2>
+    <p class="subtitle">Classification generates the ID. The sequence number is assigned from the shared bin registry.</p>
+    <div class="card">
+      <div class="inventory-form-grid">
+        <div>
+          <label for="binMake">Make / category</label>
+          <select id="binMake" onchange="refreshBinModelOptions()">
+            <option value="">Choose make…</option>
+            <option>BMW</option>
+            <option>Porsche</option>
+            <option>Trailer / Tow</option>
+            <option>Ford</option>
+            <option>Chevrolet</option>
+          </select>
+        </div>
+        <div>
+          <label for="binModel">Model / platform</label>
+          <select id="binModel" onchange="refreshBinCodePreview()">
+            <option value="">Choose make first…</option>
+          </select>
+        </div>
+        <div>
+          <label for="binSystem">System</label>
+          <select id="binSystem" onchange="refreshBinSubsystemOptions()">
+            <option value="">Choose system…</option>
+            <option>Engine</option><option>Cooling</option><option>Fuel</option><option>Intake / Exhaust</option>
+            <option>Transmission</option><option>Driveline</option><option>Suspension</option><option>Steering</option>
+            <option>Brakes</option><option>Wheels / Tires</option><option>Electrical</option><option>Body / Aero</option>
+            <option>Safety</option><option>Interior</option><option>Tools / Shop</option><option>Fluids</option>
+            <option>Fasteners</option><option>Trailer / Tow</option><option>Miscellaneous</option>
+          </select>
+        </div>
+        <div>
+          <label for="binSubsystem">Subsystem</label>
+          <select id="binSubsystem" onchange="refreshBinCodePreview()">
+            <option value="">Choose system first…</option>
+          </select>
+        </div>
+        <div class="wide">
+          <label for="binLocation">Physical location</label>
+          <input id="binLocation" placeholder="Shelf, rack, cabinet, trailer, shop area…" />
+        </div>
+        <div class="wide">
+          <label for="binDescription">Notes / description</label>
+          <textarea id="binDescription" placeholder="Optional — anything useful that belongs on the bin record."></textarea>
+        </div>
+      </div>
+      <div class="bin-code-preview-card">
+        <div class="eyebrow">PROPOSED BIN ID</div>
+        <div id="binCodePreview" class="bin-code-preview">Choose make, model, and system</div>
+      </div>
+      <div class="actions">
+        <button class="primary" type="button" onclick="createInventoryBin()">Create Bin</button>
+        <button class="secondary" type="button" onclick="portalBack('labelAssistantHome')">Cancel</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="binBrowse" class="screen">
+    <button class="secondary back" type="button" onclick="portalBack('labelAssistantHome')">← Label Assistant</button>
+    <h2 class="sectiontitle">Open Bin</h2>
+    <div class="inventory-toolbar" style="grid-template-columns:1fr">
+      <input id="binSearch" class="inventory-search" type="search" placeholder="Search Bin ID, make, model, system, location…" oninput="renderBinResults()" />
+    </div>
+    <div class="inventory-statusbar"><span id="binCount" class="inv-count"></span></div>
+    <div id="binResults" class="inventory-results"></div>
+  </section>
+
+  <section id="binDetail" class="screen">
+    <button class="secondary back" type="button" onclick="portalBack('binBrowse')">← Bins</button>
+    <div id="binDetailWrap"></div>
+  </section>
+
+  <section id="binAssignPart" class="screen">
+    <button class="secondary back" type="button" onclick="portalBack('labelAssistantHome')">← Label Assistant</button>
+    <h2 class="sectiontitle">Add / Move Part to Bin</h2>
+    <p class="subtitle">A partial quantity creates a new stock-lot record in the destination bin; the source quantity is reduced atomically.</p>
+    <div class="card">
+      <div class="inventory-form-grid">
+        <div class="wide">
+          <label for="assignBinSelect">Destination Bin ID</label>
+          <select id="assignBinSelect"><option value="">Choose destination bin…</option></select>
+        </div>
+        <div class="wide">
+          <label for="assignPartSearch">Find inventory item</label>
+          <input id="assignPartSearch" type="search" placeholder="Part, part number, Inventory ID, current location…" oninput="renderAssignPartMatches()" />
+        </div>
+      </div>
+    </div>
+
+    <div id="assignPartMatches" class="inventory-results"></div>
+
+    <div class="card" style="margin-top:18px">
+      <div class="eyebrow">SELECTED PART</div>
+      <div id="assignPartSelected"><p class="small">Choose an inventory record above.</p></div>
+      <div class="inventory-form-grid" style="margin-top:14px">
+        <div>
+          <label for="assignPartQty">Quantity to move</label>
+          <input id="assignPartQty" type="number" min="1" step="1" />
+        </div>
+        <div style="display:flex;align-items:end">
+          <label class="checkrow" style="margin:0">
+            <input id="assignPartReorder" type="checkbox" />
+            <span>Flag for reordering</span>
+          </label>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="primary" type="button" onclick="assignSelectedPartToBin()">Submit Bin Assignment</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="partTag" class="screen">
+    <button class="secondary back" type="button" onclick="portalBack('inventoryDetail')">← Part Detail</button>
+    <div class="hero" style="background:linear-gradient(135deg,rgba(183,255,34,.13),transparent 58%),var(--panel);border-left:8px solid var(--accent);padding:22px">
+      <div class="eyebrow">4×6 FOLD-WRAP PART TAG</div>
+      <h2 id="partTagItemName" style="font-size:30px;margin:8px 0 7px">Inventory Item</h2>
+      <p id="partTagMeta" class="subtitle" style="margin:0"></p>
+    </div>
+    <div class="card">
+      <label class="checkrow">
+        <input id="partTagAdjustCount" type="checkbox" onchange="togglePartTagCountAdjustment()" />
+        <span>Adjust inventory count before printing?</span>
+      </label>
+      <div id="partTagCountWrap" class="hidden" style="margin-top:14px">
+        <label for="partTagNewQty" id="partTagQtyLabel">New quantity</label>
+        <input id="partTagNewQty" type="number" min="0" step="1" />
+      </div>
+      <div class="actions">
+        <button class="primary" type="button" onclick="preparePartTag()">Review Tag</button>
+        <button class="secondary" type="button" onclick="portalBack('inventoryDetail')">Cancel</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="labelPrint" class="screen">
+    <button class="secondary back no-print" type="button" onclick="portalBack('labelAssistantHome')">← Back</button>
+    <h2 class="sectiontitle no-print">Label Preview</h2>
+    <p id="labelPrintNote" class="subtitle no-print">4×6 thermal label</p>
+    <div class="label-preview-shell">
+      <div id="labelPrintCanvas" class="label-print-canvas"></div>
+    </div>
+    <div class="actions no-print">
+      <button class="primary" type="button" onclick="printCurrentLabel()">Print 4×6 Label</button>
     </div>
   </section>
 
@@ -573,10 +754,11 @@
   </section>
 </div>
 
-<script src="assets/config.js?v=1.0.0"></script>
-<script src="assets/core.js?v=1.0.0"></script>
-<script src="assets/submissions.js?v=1.0.0"></script>
-<script src="assets/inventory.js?v=1.0.0"></script>
-<script src="assets/bootstrap.js?v=1.0.0"></script>
+<script src="assets/config.js?v=1.1.0"></script>
+<script src="assets/core.js?v=1.1.0"></script>
+<script src="assets/submissions.js?v=1.1.0"></script>
+<script src="assets/inventory.js?v=1.1.0"></script>
+<script src="assets/labels.js?v=1.1.0"></script>
+<script src="assets/bootstrap.js?v=1.1.0"></script>
 </body>
 </html>

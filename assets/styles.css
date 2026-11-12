@@ -365,6 +365,156 @@
     }
 
 
+
+    /* Inventory Label & Bin Assistant */
+    .bin-code-preview-card{
+      margin-top:18px;
+      border:2px solid var(--accent-dark);
+      border-radius:16px;
+      padding:16px 18px;
+      background:linear-gradient(135deg,rgba(183,255,34,.16),rgba(255,255,255,0) 65%),var(--panel2);
+    }
+    .bin-code-preview{
+      margin-top:6px;
+      font-size:30px;
+      line-height:1.1;
+      font-weight:950;
+      letter-spacing:.02em;
+      overflow-wrap:anywhere;
+    }
+    .bin-heading-row{
+      display:flex;
+      gap:16px;
+      justify-content:space-between;
+      align-items:flex-start;
+      margin-bottom:12px;
+    }
+    .label-mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow-wrap:anywhere}
+    .label-preview-shell{
+      display:flex;
+      justify-content:center;
+      overflow:auto;
+      padding:18px;
+      border:1px solid var(--border);
+      border-radius:16px;
+      background:#e9ece7;
+    }
+    .label-print-canvas{
+      width:4in;
+      height:6in;
+      flex:0 0 auto;
+      background:#fff;
+      color:#000;
+      box-shadow:0 12px 30px rgba(0,0,0,.18);
+      overflow:hidden;
+      font-family:Arial,Helvetica,sans-serif;
+    }
+    .bin-label-sheet{
+      width:100%;
+      height:100%;
+      box-sizing:border-box;
+      display:flex;
+      flex-direction:column;
+      padding:.26in;
+      border:.04in solid #000;
+    }
+    .bin-label-brand{
+      font-size:12pt;
+      font-weight:900;
+      letter-spacing:.08em;
+      border-bottom:.035in solid #000;
+      padding-bottom:.08in;
+    }
+    .bin-label-id{
+      font-size:32pt;
+      line-height:1;
+      font-weight:950;
+      overflow-wrap:anywhere;
+      margin:.18in 0 .12in;
+    }
+    .bin-label-class{font-size:16pt;font-weight:800;text-transform:uppercase}
+    .bin-label-system{font-size:22pt;font-weight:950;margin-top:.17in;line-height:1.05}
+    .bin-label-location{
+      margin-top:.2in;
+      padding:.12in;
+      border:.035in solid #000;
+      font-size:17pt;
+      font-weight:900;
+      text-align:center;
+      text-transform:uppercase;
+    }
+    .bin-label-note{font-size:11pt;margin-top:.12in;line-height:1.25;max-height:.7in;overflow:hidden}
+    .label-scan-block{margin-top:auto;padding-top:.12in}
+    .label-code39{
+      display:block;
+      width:100%;
+      height:.42in;
+      shape-rendering:crispEdges;
+      background:#fff;
+    }
+    .label-scan-id{
+      font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+      font-size:9pt;
+      font-weight:800;
+      text-align:center;
+      letter-spacing:.02em;
+      margin-top:.04in;
+      overflow-wrap:anywhere;
+    }
+    .part-fold-sheet{
+      width:100%;
+      height:100%;
+      display:grid;
+      grid-template-columns:repeat(2,2in);
+      grid-template-rows:repeat(2,3in);
+      box-sizing:border-box;
+    }
+    .part-tag-face{
+      width:2in;
+      height:3in;
+      box-sizing:border-box;
+      border:.02in dashed #000;
+      padding:.11in;
+      display:flex;
+      flex-direction:column;
+      overflow:hidden;
+      transform-origin:center;
+    }
+    .part-tag-face.rotate{transform:rotate(180deg)}
+    .part-tag-brand{font-size:7.5pt;font-weight:900;letter-spacing:.06em;border-bottom:.018in solid #000;padding-bottom:.04in}
+    .part-tag-name{font-size:13pt;font-weight:950;line-height:1.05;margin:.08in 0;max-height:.65in;overflow:hidden}
+    .part-tag-row{display:flex;justify-content:space-between;gap:.06in;font-size:8.5pt;line-height:1.15}
+    .part-tag-row strong{overflow-wrap:anywhere}
+    .part-tag-location{font-size:10pt;font-weight:950;text-align:center;border:.018in solid #000;padding:.05in;margin-top:.08in;overflow-wrap:anywhere}
+    .part-tag-face .label-code39{height:.3in}
+    .part-tag-face .label-scan-id{font-size:6.8pt}
+
+    @media(max-width:720px){
+      .bin-heading-row{display:block}
+      .bin-heading-row .inv-badge{margin-top:8px}
+      .bin-code-preview{font-size:24px}
+      .label-preview-shell{justify-content:flex-start;padding:10px}
+    }
+
+    @page{size:4in 6in;margin:0}
+    @media print{
+      html,body{width:4in;height:6in;margin:0!important;padding:0!important;background:#fff!important}
+      body *{visibility:hidden!important}
+      #labelPrintCanvas,#labelPrintCanvas *{visibility:visible!important}
+      #labelPrintCanvas{
+        position:absolute!important;
+        left:0!important;
+        top:0!important;
+        width:4in!important;
+        height:6in!important;
+        margin:0!important;
+        padding:0!important;
+        box-shadow:none!important;
+        border:0!important;
+      }
+      .no-print{display:none!important}
+    }
+
     .admin-stealth{
       opacity:.38;
       filter:grayscale(.8);
