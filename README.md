@@ -4,7 +4,7 @@ Trackside-friendly team feedback, post-event reporting, administration, and shar
 
 ## Current release
 
-Production V1.0.0 uses GitHub Pages for the portal and Supabase for shared submissions and inventory. This branch prepares V1.1 Label & Bin Assistant and the November 8 F22/E92 inventory replacement. Production schema and data changes have not been applied. Failed submissions are retained in a device-local queue and retried when connectivity returns.
+Production V1.1.0 uses GitHub Pages for the portal and Supabase for shared submissions and inventory. The Label & Bin Assistant and November 8 F22/E92 inventory replacement were activated on November 12, 2026. Active inventory has 92 F22, 123 E92, 103 F30, and 58 Boxster records (376 total), with five unknown counts preserved. Failed submissions are retained in a device-local queue and retried when connectivity returns.
 
 ## Project structure
 
@@ -63,7 +63,7 @@ To enable exact vehicle selectors in Supabase, run `supabase/schema.sql` (if nee
 
 The Label Assistant uses only 4×6 thermal adhesive stock. Full bin labels occupy a 4×6 sheet; individual part labels use that same stock in a fold-wrap prototype around a 2×3 paper tag. There is no separate 2×3 media or printer path. Physical fold geometry and barcode scanning still require a printer test.
 
-Production application remains on hold. See [F22/E92 inventory update](docs/inventory-f22-e92-update.md) for source totals, private backups, and the future rollout order: label schema, count schema, then prepared replacement SQL. Merge and database rollout must be coordinated; merging the frontend alone does not update shared inventory. Do not rerun the historical seed after the replacement.
+Production activation is complete. See [F22/E92 inventory update](docs/inventory-f22-e92-update.md) for source totals, private backups, rollout results, and deployment order for another environment: label schema, count schema, then replacement SQL. Frontend and database rollout must be coordinated; merging the frontend alone does not update shared inventory. Do not rerun the historical seed after the replacement.
 
 Run the repeatable static checks with:
 

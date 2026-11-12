@@ -59,6 +59,7 @@ create unique index if not exists inventory_items_tag_id_uidx
 create or replace function public.set_inventory_bin_updated_at()
 returns trigger
 language plpgsql
+set search_path = pg_catalog
 as $$
 begin
   new.updated_at = now();

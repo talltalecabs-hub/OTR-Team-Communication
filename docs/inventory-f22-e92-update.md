@@ -74,13 +74,21 @@ This differs from the original V1 seed's 297 records / 690 units. Live
 M235 additions must be archived along with the other replaced records; the
 update does not reconstruct production from the older seed. F30 and 986 Boxster
 retain their current rows and counts. Based on this observation, the replacement
-projects 366 active records: 215 workbook records plus 161 preserved F30/Boxster
+projects 376 active records: 215 workbook records plus 161 preserved F30/Boxster
 records. A single global unit total would misrepresent the workbook's mixed
 units and unknown quantities.
 
-**Production application is withheld.** The JSON, schema changes, and replacement
-SQL are prepared for review on the feature branch. No production migration or
-inventory update is performed by the extraction or generation commands.
+**Activated November 12, 2026.** PR #8 was merged as
+`c1090d110d1b41d55b3c0bac4d0e30644c40e81f`, GitHub Pages published V1.1.0,
+and the three prepared Supabase migrations were applied in the documented order.
+Production now has 92 F22, 123 E92, 103 F30, and 58 Boxster records: 376 total.
+There are 45 bin nodes and five unknown quantities. All 137 replaced rows are
+retained in the private archive. Post-rollout fingerprints verified that F30,
+Boxster, all 23 vehicles, and all 26 existing submissions were unchanged.
+The live browser verified the new counts, sub-bins, and unknown-count display.
+Extraction and generation commands still only prepare local artifacts; they
+never connect to production. The former 366-record projection was an arithmetic
+error; the correct total is 376.
 
 ## Reproduce and review
 
@@ -98,12 +106,12 @@ an identically named workbook with identical content produces the same JSON.
 Source row identities are stable within this fixed snapshot, including
 physically distinct repeated labels.
 
-For a future approved rollout, the existing base inventory schema must be in
+For another environment, the existing base inventory schema must be in
 place. Apply prerequisites in this order: `supabase/label_assistant_schema.sql`,
 then `supabase/inventory_count_schema.sql`, then the replacement SQL generated
 at `supabase/update_inventory_f22_e92_20261108.sql` by
 `node scripts/build_inventory_update.mjs`. The count schema allows unknown
 quantities, preserves source quantity units and metadata, and adds parent-bin
 relationships. Review the generated SQL and a current inventory backup before
-the approved production rollout; do not run the historical inventory seed as
+any rollout; do not run the historical inventory seed as
 part of this replacement.
