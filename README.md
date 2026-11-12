@@ -78,6 +78,8 @@ npm install --prefix /tmp/otr-db-test --no-audit --no-fund --ignore-scripts @ele
 PGLITE_MODULE=/tmp/otr-db-test/node_modules/@electric-sql/pglite/dist/index.js node scripts/test_inventory_update.mjs
 ```
 
+With Python Playwright and Chromium installed, `python scripts/test_portal.py` runs local browser regressions against a simulated Supabase backend. It never connects to production. Set `CHROMIUM_PATH` if needed and `OTR_TEST_OUTPUT` to retain label PDFs and the preview screenshot in a chosen directory.
+
 ## Beta security note
 
 The current V1 deployment intentionally allows anonymous inventory reads/inserts/updates and anonymous Admin reads. Replace those beta policies with authenticated crew access before broad public use.
