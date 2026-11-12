@@ -89,6 +89,119 @@ let currentInventoryBin=null;
 let currentBinAssignmentItem=null;
 let currentLabelPayload=null;
 let binAssignmentPending=false;
+let binCartSavePending=false;
+
+const CART_CHASSIS_CODES={E92:"E92",F22:"F22",F30:"F30","986 Boxster":"986"};
+let inventoryCarts=[];
+let inventoryCartsReady=false;
+
+function isLooseInventoryBin(bin){
+  return /-000$/.test(bin?.bin_code||"");
+}
+function binCartCode(bin){
+  const prefix=CART_CHASSIS_CODES[bin?.model];
+  return prefix && bin.cart_location && !isLooseInventoryBin(bin) ? `${prefix}-${bin.cart_location}` : "";
+}
+function binCartLocationLabel(bin){
+  return binCartCode(bin)||"Unassigned";
+}
+function inventoryItemLocationLabel(item){
+  if(inventoryStockCategoryLabel(item)==="Backstock") return "Backstock";
+  const bin=item.inventory_bin_id ? findInventoryBin(item.inventory_bin_id) : null;
+  if(bin && !isLooseInventoryBin(bin)) return binCartCode(bin)||"Unassigned";
+  return item.cart_code||"Unassigned";
+}
+async function loadInventoryCarts(){
+  try{
+    const response=await fetch(`${SUPABASE_URL}/rest/v1/inventory_carts?select=*&order=cart_code.asc`,{headers:{"apikey":SUPABASE_KEY}});
+    if(!response.ok) throw new Error(`Cart registry ${response.status}`);
+    const rows=await response.json();
+    if(!Array.isArray(rows)) throw new Error("Invalid cart registry");
+    inventoryCarts=rows;
+    inventoryCartsReady=true;
+    return true;
+  }catch(error){
+    console.error("Cart registry unavailable",error);
+    inventoryCarts=[];
+    inventoryCartsReady=false;
+    return false;
+  }
+}
+function populateInventoryCartFilter(){
+  const select=document.getElementById("inventoryCartSelect");
+  select.innerHTML='<option value="ALL">All locations</option>'+inventoryCarts.map(cart=>`<option value="${escapeHtml(cart.cart_code)}">${escapeHtml(cart.cart_code)}</option>`).join("")+'<option>Backstock</option><option>Unassigned</option>';
+  select.value=[...select.options].some(option=>option.value===inventoryCartFilter)?inventoryCartFilter:"ALL";
+  inventoryCartFilter=select.value;
+}
+function inventoryPlacementPlatform(prefix){
+  return prefix==="inv" ? currentInventoryItem?.platform||"" : document.getElementById("addPlatform").value;
+}
+function setupInventoryPlacement(prefix,item=null){
+  const select=document.getElementById(prefix+"Location");
+  const platform=inventoryPlacementPlatform(prefix);
+  const previous=item ? inventoryItemLocationLabel(item) : select.value;
+  select.innerHTML='<option>Unassigned</option>'+inventoryCarts.filter(cart=>cart.platform===platform).map(cart=>`<option value="${escapeHtml(cart.cart_code)}">${escapeHtml(cart.cart_code)}</option>`).join("")+'<option>Backstock</option>';
+  select.value=[...select.options].some(option=>option.value===previous)?previous:"Unassigned";
+  if(!item && document.getElementById(prefix+"StockCategory").value==="Backstock") select.value="Backstock";
+  refreshInventoryPlacementBins(prefix,item?.inventory_bin_id||"");
+}
+function refreshInventoryPlacementBins(prefix,selectedBin=null){
+  const select=document.getElementById(prefix+"BinId");
+  const previous=selectedBin??select.value;
+  const platform=inventoryPlacementPlatform(prefix);
+  const location=document.getElementById(prefix+"Location").value;
+  const bins=inventoryBins.filter(bin=>bin.model===platform && ((selectedBin && bin.id===selectedBin) || isLooseInventoryBin(bin) || (location==="Backstock" ? !bin.cart_location : binCartLocationLabel(bin)===location)));
+  select.innerHTML='<option value="">Unassigned bin</option>'+bins.map(bin=>`<option value="${escapeHtml(bin.id)}">${escapeHtml(bin.bin_code)}${isLooseInventoryBin(bin)?" — Loose / bulky items":""}</option>`).join("");
+  select.value=bins.some(bin=>bin.id===previous)?previous:"";
+}
+function changeInventoryPlacement(prefix){
+  document.getElementById(prefix+"StockCategory").value=document.getElementById(prefix+"Location").value==="Backstock"?"Backstock":"Mobile";
+  refreshInventoryPlacementBins(prefix);
+}
+function changeInventoryAssignment(prefix){
+  const location=document.getElementById(prefix+"Location");
+  if(document.getElementById(prefix+"StockCategory").value==="Backstock") location.value="Backstock";
+  else if(location.value==="Backstock") location.value="Unassigned";
+  refreshInventoryPlacementBins(prefix);
+}
+function inventoryPlacementPatch(prefix){
+  const location=document.getElementById(prefix+"Location").value;
+  const bin=findInventoryBin(document.getElementById(prefix+"BinId").value);
+  const cart=inventoryCarts.find(row=>row.cart_code===location);
+  const existing=prefix==="inv"?currentInventoryItem:null;
+  return {
+    stock_category:location==="Backstock"?"Backstock":"Mobile",
+    inventory_bin_id:bin?.id||null,
+    cart_code:cart && (!bin||isLooseInventoryBin(bin))?cart.cart_code:null,
+    location:bin?.bin_code || (existing && !existing.inventory_bin_id && inventoryItemLocationLabel(existing)===location ? existing.location : location)
+  };
+}
+
+async function saveBinCartLocation(){
+  const bin=currentInventoryBin;
+  if(!bin || binCartSavePending || isLooseInventoryBin(bin)) return;
+  const cart=document.getElementById("binCartLocationSelect").value;
+  if(!["","A","B"].includes(cart)) return;
+  binCartSavePending=true;
+  try{
+    const response=await fetch(`${SUPABASE_URL}/rest/v1/inventory_bins?id=eq.${encodeURIComponent(bin.id)}`,{
+      method:"PATCH",
+      headers:{"apikey":SUPABASE_KEY,"Content-Type":"application/json","Prefer":"return=representation"},
+      body:JSON.stringify({cart_location:cart||null})
+    });
+    if(!response.ok) throw new Error(`Cart assignment failed: ${response.status}`);
+    const rows=await response.json();
+    if(!rows?.[0]) throw new Error("No bin was updated");
+    Object.assign(bin,rows[0]);
+    renderInventoryResults();
+    await openBinDetail(bin.bin_code,"replace");
+  }catch(error){
+    console.error(error);
+    alert("Unable to save this bin's cart location. Please retry.");
+  }finally{
+    binCartSavePending=false;
+  }
+}
 
 function labelSafeText(value){
   return String(value??"").trim();
@@ -244,6 +357,12 @@ function nextBinCode(base){
 function refreshBinCodePreview(){
   const preview=document.getElementById("binCodePreview");
   if(!preview) return;
+  const cartSelect=document.getElementById("binCartLocation");
+  const model=document.getElementById("binModel")?.value;
+  const prefix=CART_CHASSIS_CODES[model];
+  const previous=cartSelect.value;
+  cartSelect.innerHTML='<option value="">Unassigned</option>'+(prefix?`<option value="A">${prefix}-A</option><option value="B">${prefix}-B</option>`:"");
+  cartSelect.value=prefix && ["A","B"].includes(previous)?previous:"";
   const base=binBaseCode();
   preview.textContent=base ? nextBinCode(base) : "Choose make, model, and system";
 }
@@ -301,11 +420,11 @@ async function loadInventoryBins(){
 
 async function openLabelAssistant(){
   showScreen("labelAssistantHome");
-  await loadInventoryBins();
+  await Promise.all([loadInventoryBins(),loadInventoryCarts()]);
 }
 
 function resetCreateBinForm(){
-  ["binMake","binModel","binSystem","binSubsystem"].forEach(id=>{
+  ["binMake","binModel","binSystem","binSubsystem","binCartLocation"].forEach(id=>{
     const field=document.getElementById(id);
     if(field) field.selectedIndex=0;
   });
@@ -371,6 +490,7 @@ async function createInventoryBin(){
     system,
     subsystem,
     location,
+    cart_location:document.getElementById("binCartLocation").value||null,
     description,
     label_format:"4x6",
     qr_value:`OTR:BIN:${code}`,
@@ -392,9 +512,17 @@ function findInventoryBin(key){
   return inventoryBins.find(bin=>String(bin.id)===String(key)||String(bin.bin_code)===String(key));
 }
 
-async function openBinBrowser(){
+async function openBinBrowser(model="ALL",cart="ALL"){
+  const selectedCart=inventoryCarts.find(row=>row.cart_code===cart);
+  if(selectedCart){model=selectedCart.platform;cart=selectedCart.cart_letter;}
+  if(cart==="Unassigned") cart="UNASSIGNED";
   showScreen("binBrowse");
   await loadInventoryBins();
+  const models=[...new Set([...Object.values(BIN_MODEL_OPTIONS).flat(),...inventoryBins.map(bin=>bin.model),...inventoryData.map(item=>item.platform).filter(Boolean)])].sort();
+  const chassis=document.getElementById("binChassisFilter");
+  chassis.innerHTML='<option value="ALL">All chassis</option>'+models.map(value=>`<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join("");
+  chassis.value=models.includes(model)?model:"ALL";
+  document.getElementById("binCartFilter").value=["ALL","A","B","UNASSIGNED"].includes(cart)?cart:"ALL";
   const search=document.getElementById("binSearch");
   if(search) search.value="";
   renderBinResults();
@@ -405,8 +533,12 @@ function renderBinResults(){
   if(!wrap) return;
   const q=(document.getElementById("binSearch")?.value||"").trim().toLowerCase();
   const rows=inventoryBins.filter(bin=>{
+    const model=document.getElementById("binChassisFilter").value;
+    const cart=document.getElementById("binCartFilter").value;
+    if(model!=="ALL" && bin.model!==model) return false;
+    if(cart!=="ALL" && (bin.cart_location||"UNASSIGNED")!==cart) return false;
     if(!q) return true;
-    return [bin.bin_code,bin.make,bin.model,bin.system,bin.subsystem,bin.location,bin.description]
+    return [bin.bin_code,bin.make,bin.model,bin.system,bin.subsystem,bin.location,bin.description,binCartLocationLabel(bin)]
       .filter(Boolean).join(" ").toLowerCase().includes(q);
   });
   const count=document.getElementById("binCount");
@@ -420,6 +552,7 @@ function renderBinResults(){
     <div class="meta">${escapeHtml(bin.make)} • ${escapeHtml(bin.model)}</div>
     <div class="meta">${escapeHtml(bin.system)}${bin.subsystem?` • ${escapeHtml(bin.subsystem)}`:""}</div>
     <div class="meta">📍 ${escapeHtml(bin.location||"Location not set")}</div>
+    <div class="meta">Cart: ${escapeHtml(binCartLocationLabel(bin))}</div>
   </button>`).join("");
 }
 
@@ -449,24 +582,28 @@ async function openBinDetail(key,historyMode="push"){
     </div>
     <div class="card">
       <div class="inventory-detail-grid">
-        <div class="inventory-field"><div class="k">Location</div><div class="v">${escapeHtml(bin.location||"Not set")}</div></div>
+        <div class="inventory-field"><div class="k">Location</div><div class="v">${escapeHtml(binCartLocationLabel(bin))}</div></div>
         <div class="inventory-field"><div class="k">Direct contents</div><div class="v">${items.length} record${items.length===1?"":"s"}</div></div>
         <div class="inventory-field"><div class="k">Label stock</div><div class="v">4 × 6 thermal</div></div>
         <div class="inventory-field"><div class="k">Scan ID</div><div class="v label-mono">${escapeHtml(bin.qr_value||`OTR:BIN:${bin.bin_code}`)}</div></div>
       </div>
       ${parent?`<p>Parent bin: <button class="secondary" type="button" onclick="openBinDetail('${escapeHtml(parent.bin_code)}')">${escapeHtml(parent.bin_code)}</button></p>`:""}
       ${bin.description?`<p><strong>Notes:</strong> ${escapeHtml(bin.description)}</p>`:""}
+      <label for="binCartLocationSelect">Assign this ${escapeHtml(bin.model)} bin to a cart</label>
+      <select id="binCartLocationSelect" ${isLooseInventoryBin(bin)?"disabled":""}><option value="">Unassigned</option><option value="A" ${bin.cart_location==="A"?"selected":""}>${escapeHtml(CART_CHASSIS_CODES[bin.model]||bin.model)}-A</option><option value="B" ${bin.cart_location==="B"?"selected":""}>${escapeHtml(CART_CHASSIS_CODES[bin.model]||bin.model)}-B</option></select>
+      <p class="small">${isLooseInventoryBin(bin)?"Loose items use this Bin ID on either cart. Assign their locations on each part.":"Sub-bins keep their own locations when this bin is reassigned."}</p>
       <div class="actions">
+        <button class="primary" type="button" onclick="saveBinCartLocation()" ${isLooseInventoryBin(bin)?"disabled":""}>Save Cart Location</button>
         <button class="primary" type="button" onclick="openBinLabel('${escapeHtml(String(bin.bin_code)).replace(/'/g,"&#39;")}')">Print 4×6 Bin Label</button>
         <button class="secondary" type="button" onclick="openAssignPartToBin('${escapeHtml(String(bin.bin_code)).replace(/'/g,"&#39;")}')">Add / Move Part Here</button>
       </div>
     </div>
-    ${children.length?`<h3 style="margin:22px 0 10px">Sub-bins</h3><div class="inventory-results">${children.map(child=>`<button type="button" class="inventory-card" onclick="openBinDetail('${escapeHtml(child.bin_code)}')"><strong>${escapeHtml(child.bin_code)}</strong><div class="meta">${escapeHtml(child.description||child.system)} • ${itemsForBin(child).length} direct records</div></button>`).join("")}</div>`:""}
+    ${children.length?`<h3 style="margin:22px 0 10px">Sub-bins</h3><div class="inventory-results">${children.map(child=>`<button type="button" class="inventory-card" onclick="openBinDetail('${escapeHtml(child.bin_code)}')"><strong>${escapeHtml(child.bin_code)}</strong><div class="meta">${escapeHtml(child.description||child.system)} • ${itemsForBin(child).length} direct records • ${escapeHtml(binCartLocationLabel(child))}</div></button>`).join("")}</div>`:""}
     <h3 style="margin:22px 0 10px">Contents</h3>
     <div class="inventory-results">${items.length?items.map(item=>`<button type="button" class="inventory-card" onclick="openInventoryDetail('${escapeHtml(String(item.local_key)).replace(/'/g,"&#39;")}')">
       <strong>${escapeHtml(item.item_name||"Unnamed item")}</strong>
       <div class="meta"><span class="qty">Qty ${escapeHtml(inventoryQuantityLabel(item))}</span> • ${escapeHtml(item.condition||"Unspecified")}</div>
-      <div class="meta">${escapeHtml(item.part_number||item.inventory_code||"")}</div>
+      <div class="meta">${escapeHtml(item.part_number||item.inventory_code||"")}</div><div class="meta">Location: ${escapeHtml(inventoryItemLocationLabel(item))}</div>
       ${item.reorder_flag?'<div class="meta" style="margin-top:8px"><span class="inv-badge review">REORDER</span></div>':""}
     </button>`).join(""):'<div class="card"><strong>No individually tagged stock recorded directly in this bin.</strong><p class="small">This does not establish a physical count of zero. Review any sub-bins or count the contents.</p></div>'}</div>`;
   showScreen("binDetail",{historyMode});
@@ -482,11 +619,23 @@ function populateBinAssignmentSelect(selected=""){
   if(bin) select.value=bin.id;
 }
 
+function refreshLooseCartAssignment(){
+  const select=document.getElementById("assignPartCart");
+  const bin=findInventoryBin(document.getElementById("assignBinSelect").value);
+  const previous=select.value;
+  select.innerHTML='<option value="">Unassigned</option>'+inventoryCarts.filter(cart=>cart.platform===bin?.model).map(cart=>`<option value="${escapeHtml(cart.cart_code)}">${escapeHtml(cart.cart_code)}</option>`).join("");
+  select.disabled=!isLooseInventoryBin(bin)||inventoryStockCategoryLabel(currentBinAssignmentItem||{})==="Backstock";
+  if(inventoryStockCategoryLabel(currentBinAssignmentItem||{})==="Backstock") select.options[0].textContent="Backstock";
+  select.value=[...select.options].some(option=>option.value===previous)?previous:"";
+}
+
 async function openAssignPartToBin(binKey="",itemKey=""){
   if(!inventoryBinsReady) await loadInventoryBins();
   if(!inventoryBackendReady) await loadInventory();
+  if(!inventoryCartsReady) await loadInventoryCarts();
   currentBinAssignmentItem=null;
   populateBinAssignmentSelect(binKey);
+  refreshLooseCartAssignment();
   const search=document.getElementById("assignPartSearch");
   if(search) search.value="";
   document.getElementById("assignPartSelected").innerHTML='<p class="small">Choose an inventory record below.</p>';
@@ -503,12 +652,12 @@ function renderAssignPartMatches(){
   const q=(document.getElementById("assignPartSearch")?.value||"").trim().toLowerCase();
   const rows=inventoryData.filter(item=>{
     if(!q) return true;
-    return [item.item_name,item.part_number,item.inventory_code,item.location,item.platform,item.category]
+    return [item.item_name,item.part_number,item.inventory_code,item.location,item.platform,item.category,inventoryStockCategoryLabel(item)]
       .filter(Boolean).join(" ").toLowerCase().includes(q);
   }).slice(0,40);
   wrap.innerHTML=rows.map(item=>`<button type="button" class="inventory-card" onclick="selectPartForBin('${escapeHtml(String(item.local_key)).replace(/'/g,"&#39;")}')">
     <strong>${escapeHtml(item.item_name||"Unnamed item")}</strong>
-    <div class="meta"><span class="qty">Qty ${escapeHtml(inventoryQuantityLabel(item))}</span> • ${escapeHtml(item.platform||"Unassigned")}</div>
+    <div class="meta"><span class="qty">Qty ${escapeHtml(inventoryQuantityLabel(item))}</span> • ${escapeHtml(inventoryStockCategoryLabel(item))} • ${escapeHtml(item.platform||"Unassigned")}</div>
     <div class="meta">📍 ${escapeHtml(item.location||"Location unknown")}</div>
   </button>`).join("");
 }
@@ -517,8 +666,9 @@ function selectPartForBin(key){
   const item=findInventoryItem(key);
   if(!item) return;
   currentBinAssignmentItem=item;
+  refreshLooseCartAssignment();
   const selected=document.getElementById("assignPartSelected");
-  selected.innerHTML=`<strong>${escapeHtml(item.item_name||"Unnamed item")}</strong><div class="meta">Current qty ${escapeHtml(inventoryQuantityLabel(item))} • ${escapeHtml(item.location||"Location unknown")}</div><div class="meta">${escapeHtml(item.part_number||item.inventory_code||"")}</div>`;
+  selected.innerHTML=`<strong>${escapeHtml(item.item_name||"Unnamed item")}</strong><div class="meta">Current qty ${escapeHtml(inventoryQuantityLabel(item))} • ${escapeHtml(item.location||"Location unknown")}</div><div class="meta">${escapeHtml(item.part_number||item.inventory_code||"")}</div><div class="meta">Location: ${escapeHtml(inventoryItemLocationLabel(item))}</div>`;
   document.getElementById("assignPartQty").value=item.quantity===null ? "" : Math.max(1,Number(item.quantity||1));
   document.getElementById("assignPartQty").max=Math.max(1,Number(item.quantity||1));
   document.getElementById("assignPartReorder").checked=Boolean(item.reorder_flag);
@@ -556,7 +706,8 @@ async function assignSelectedPartToBin(){
         p_item_id:item.id,
         p_bin_id:bin.id,
         p_quantity:quantity,
-        p_reorder_flag:reorder
+        p_reorder_flag:reorder,
+        p_cart_code:isLooseInventoryBin(bin)?document.getElementById("assignPartCart").value||null:null
       })
     });
     if(!response.ok){
@@ -696,12 +847,13 @@ function labelScanBlock(value){
 
 function partFaceHtml(item,rotate=false){
   const code=item.tag_id||stablePartTagId(item);
-  const binCode=inventoryItemBinLabel(item)||item.location||"UNASSIGNED";
+  const binCode=inventoryItemBinLabel(item)||"—";
+  const placement=`${inventoryItemLocationLabel(item)} / ${binCode}`;
   return `<div class="part-tag-face${rotate?" rotate":""}">
     <div class="part-tag-brand">OTR • PART TAG</div>
     <div class="part-tag-name">${escapeHtml(item.item_name||"Inventory Item")}</div>
     <div class="part-tag-row"><strong>${escapeHtml(item.part_number||item.inventory_code||"NO P/N")}</strong><span>QTY ${escapeHtml(inventoryQuantityLabel(item))}</span></div>
-    <div class="part-tag-location">${escapeHtml(binCode)}</div>
+    <div class="part-tag-location">${escapeHtml(placement)}</div>
     ${labelScanBlock(code)}
   </div>`;
 }
@@ -713,7 +865,7 @@ function binLabelHtml(bin){
     <div class="bin-label-id">${escapeHtml(bin.bin_code)}</div>
     <div class="bin-label-class">${escapeHtml(bin.make)} • ${escapeHtml(bin.model)}</div>
     <div class="bin-label-system">${escapeHtml(bin.system)}${bin.subsystem?` / ${escapeHtml(bin.subsystem)}`:""}</div>
-    <div class="bin-label-location">${escapeHtml(bin.location||"LOCATION NOT SET")}</div>
+    <div class="bin-label-location">${escapeHtml(binCartLocationLabel(bin))}</div>
     ${bin.description?`<div class="bin-label-note">${escapeHtml(bin.description)}</div>`:""}
     ${labelScanBlock(code)}
   </div>`;

@@ -1,6 +1,8 @@
 // ----- Inventory Assistant V1 — Supabase authoritative -----
 let inventoryData = [];
 let inventoryFilter = "ALL";
+let inventoryStockCategory = "Mobile";
+let inventoryCartFilter = "ALL";
 let currentInventoryItem = null;
 let inventoryBackendReady = false;
 
@@ -17,6 +19,9 @@ async function loadInventory(){
   const wrap=document.getElementById("inventoryResults");
 
   if(mode) mode.textContent="Loading shared inventory…";
+  if(wrap) wrap.innerHTML='<div class="card"><strong>Loading shared inventory…</strong></div>';
+  const loadingCount=document.getElementById("inventoryCount");
+  if(loadingCount) loadingCount.textContent="";
 
   try{
     const resp=await fetch(`${SUPABASE_URL}/rest/v1/inventory_items?select=*&order=item_name.asc`,{
@@ -51,36 +56,64 @@ async function loadInventory(){
     return;
   }
 
+  await Promise.all([loadInventoryBins(),loadInventoryCarts()]);
+  populateInventoryCartFilter();
+  const cartFilter=document.getElementById("inventoryCartSelect");
+  cartFilter.disabled=!inventoryBinsReady||!inventoryCartsReady;
+  if(!inventoryBinsReady||!inventoryCartsReady){
+    inventoryCartFilter="ALL";
+    cartFilter.value="ALL";
+    if(mode) mode.textContent+=" • Cart locations unavailable";
+  }
   renderInventoryResults();
 }
 function openInventoryAssistant(){
   showScreen("inventoryHome");
 }
-function browseInventory(platform){
+function inventoryStockCategoryLabel(item){
+  return item.stock_category||"Mobile";
+}
+function openMobileInventory(){
+  inventoryStockCategory="Mobile";
+  showScreen("inventoryMobile");
+}
+function updateInventoryBrowseTitle(){
+  const labels={"E92":"E92 M3","F22":"F22","986 Boxster":"986 Boxster","F30":"F30 3XX","M235 / M235iR":"M235iR","ALL":"All chassis"};
+  const category=inventoryStockCategory==="ALL" ? "All Inventory" : inventoryStockCategory;
+  document.getElementById("inventoryBrowseTitle").textContent=`${category} • ${labels[inventoryFilter]||inventoryFilter}`;
+}
+function browseInventory(platform,stockCategory="Mobile"){
   inventoryFilter=platform;
-  const title=document.getElementById("inventoryBrowseTitle");
-  if(title){
-    const labels={
-      "E92":"E92 M3 Inventory",
-      "F22":"F22 Inventory",
-      "986 Boxster":"986 Boxster Inventory",
-      "F30":"F30 3XX Inventory",
-      "M235 / M235iR":"M235iR Inventory",
-      "Non-Race":"Non-Race Inventory",
-      "Tow":"Tow Inventory",
-      "Trailer":"Trailer Inventory",
-      "ALL":"Entire OTR Inventory"
-    };
-    title.textContent=labels[platform]||"Inventory";
-  }
-  const s=document.getElementById("inventorySearch");
-  if(s) s.value="";
+  inventoryStockCategory=stockCategory;
+  inventoryCartFilter="ALL";
+  document.getElementById("inventoryCartSelect").value="ALL";
+  document.getElementById("inventoryStockCategoryFilter").value=stockCategory;
+  document.getElementById("inventoryPlatformFilter").value=platform;
+  document.getElementById("inventorySearch").value="";
+  updateInventoryBrowseTitle();
   showScreen("inventoryBrowse");
-  loadInventory();
+  return loadInventory();
+}
+function setInventoryFilters(){
+  inventoryStockCategory=document.getElementById("inventoryStockCategoryFilter").value;
+  inventoryFilter=document.getElementById("inventoryPlatformFilter").value;
+  inventoryCartFilter=document.getElementById("inventoryCartSelect").value;
+  updateInventoryBrowseTitle();
+  renderInventoryResults();
 }
 function inventoryMatchesPlatform(item){
-  if(inventoryFilter==="ALL") return true;
-  return item.platform===inventoryFilter;
+  return (inventoryFilter==="ALL" || item.platform===inventoryFilter) &&
+    (inventoryStockCategory==="ALL" || inventoryStockCategoryLabel(item)===inventoryStockCategory) &&
+    (inventoryCartFilter==="ALL" || inventoryItemLocationLabel(item)===inventoryCartFilter);
+}
+async function changeInventoryStockCategory(category){
+  const item=currentInventoryItem;
+  if(!item || !["Mobile","Backstock"].includes(category)) return;
+  const saved=await persistInventoryPatch(item,{stock_category:category});
+  if(!saved) return;
+  item.stock_category=category;
+  renderInventoryResults();
+  openInventoryDetail(item.local_key,"replace");
 }
 function invBadge(status){
   const s=status||"Imported";
@@ -93,13 +126,13 @@ function renderInventoryResults(){
   const q=(document.getElementById("inventorySearch")?.value||"").trim().toLowerCase();
   const rows=inventoryData.filter(inventoryMatchesPlatform).filter(item=>{
     if(!q) return true;
-    const hay=[item.item_name,item.platform,item.location,item.category,item.condition,item.status,item.part_number,item.assigned_vehicle,item.use_case,item.tag_id].filter(Boolean).join(" ").toLowerCase();
+    const hay=[item.item_name,item.platform,item.location,item.category,item.condition,item.status,item.part_number,item.assigned_vehicle,item.use_case,item.tag_id,inventoryStockCategoryLabel(item)].filter(Boolean).join(" ").toLowerCase();
     return hay.includes(q);
   });
   const count=document.getElementById("inventoryCount");
   if(count) count.textContent=`${rows.length} item record${rows.length===1?"":"s"}`;
   if(!rows.length){
-    wrap.innerHTML='<div class="card"><strong>No matching inventory records.</strong><p class="small">Try another search, search the entire inventory, or add what you found.</p></div>';
+    wrap.innerHTML='<div class="card"><strong>No matching inventory records.</strong><p class="small">Try another search, or add stock in this inventory category.</p><button class="secondary" type="button" onclick="openAddInventory()">Add Inventory Item</button></div>';
     return;
   }
   wrap.innerHTML=rows.map(item=>{
@@ -108,8 +141,8 @@ function renderInventoryResults(){
     return `<button type="button" class="inventory-card" onclick="openInventoryDetail('${escapeHtml(String(item.local_key)).replace(/'/g,"&#39;")}')">
       <strong>${escapeHtml(item.item_name||"Unnamed item")}</strong>
       <div class="meta">${escapeHtml(item.platform||"Unassigned platform")} • ${escapeHtml(item.category||"Uncategorized")}</div>
-      <div class="meta"><span class="qty">Qty ${escapeHtml(inventoryQuantityLabel(item))}</span> • 📍 ${escapeHtml(item.location||"Location unknown")}</div>
-      <div class="meta" style="margin-top:9px">${invBadge(item.verification_status)} ${direct}</div>
+      <div class="meta"><span class="qty">Qty ${escapeHtml(inventoryQuantityLabel(item))}</span> • 📍 ${escapeHtml(inventoryItemLocationLabel(item))}</div>
+      <div class="meta" style="margin-top:9px">${invBadge(item.verification_status)} <span class="inv-badge direct">${escapeHtml(inventoryStockCategoryLabel(item))}</span> ${direct}</div>
     </button>`;
   }).join("");
 }
@@ -126,18 +159,18 @@ function openInventoryDetail(key,historyMode="push"){
   const imported=(item.verification_status||"Imported")==="Imported";
   wrap.innerHTML=`
     <h2 class="sectiontitle">${escapeHtml(item.item_name||"Inventory Item")}</h2>
-    <div class="inventory-statusbar">${invBadge(item.verification_status)} ${direct}</div>
+    <div class="inventory-statusbar">${invBadge(item.verification_status)} <span class="inv-badge direct">${escapeHtml(inventoryStockCategoryLabel(item))}</span> ${direct}</div>
     <div class="card">
       <div class="inventory-detail-grid">
         <div class="inventory-field"><div class="k">Quantity</div><div class="v">${escapeHtml(inventoryQuantityLabel(item))}</div></div>
         <div class="inventory-field"><div class="k">Condition</div><div class="v">${escapeHtml(item.condition||"Unspecified")}</div></div>
-        <div class="inventory-field"><div class="k">Location</div><div class="v">${escapeHtml(item.location||"Unknown")}</div></div>
+        <div class="inventory-field"><div class="k">Location</div><div class="v">${escapeHtml(inventoryItemLocationLabel(item))}</div></div>
         <div class="inventory-field"><div class="k">Platform</div><div class="v">${escapeHtml(item.platform||"Unassigned")}</div></div>
         <div class="inventory-field"><div class="k">Category</div><div class="v">${escapeHtml(item.category||"Uncategorized")}</div></div>
         <div class="inventory-field"><div class="k">Part Number</div><div class="v">${escapeHtml(item.part_number||"—")}</div></div>
-        <div class="inventory-field"><div class="k">Bin</div><div class="v">${escapeHtml(inventoryItemBinLabel(item)||(item.inventory_bin_id?item.location:"—")||"—")}</div></div>
+        <div class="inventory-field"><div class="k">Bin</div><div class="v">${item.inventory_bin_id?`<button class="secondary" type="button" onclick="openBinDetail('${escapeHtml(item.inventory_bin_id)}')">${escapeHtml(inventoryItemBinLabel(item)||item.location||"Open bin")}</button>`:"—"}</div></div>
         <div class="inventory-field"><div class="k">Reorder Flag</div><div class="v">${item.reorder_flag?"Yes":"No"}</div></div>
-        <div class="inventory-field"><div class="k">Assignment</div><div class="v">${escapeHtml(assignment)}</div></div>
+        <div class="inventory-field"><div class="k">Assignment</div><div class="v">${escapeHtml(inventoryStockCategoryLabel(item))} Inventory${assignment!=="General Inventory"?`<div class="small">${escapeHtml(assignment)}</div>`:""}</div></div>
         <div class="inventory-field"><div class="k">Use Case</div><div class="v">${escapeHtml(item.use_case||"—")}</div></div>
       </div>
       ${imported ? `<div class="seed-note"><strong>Imported record — not independently physically verified.</strong><br>Original: “${escapeHtml(item.original_item_text||item.item_name)}” • ${item.original_quantity===null ? "Uncounted" : escapeHtml(inventoryQuantityLabel({...item,quantity:item.original_quantity??item.quantity}))} • ${escapeHtml(item.original_location||item.location||"Unknown location")}</div>` : ""}
@@ -147,6 +180,7 @@ function openInventoryDetail(key,historyMode="push"){
         <button class="primary" type="button" onclick="openInventoryVerify()">✓ Verify / Correct</button>
         <button class="secondary" type="button" onclick="openAssignPartToBin('', '${escapeHtml(String(item.local_key)).replace(/'/g,"&#39;")}')">Add / Move to Bin</button>
         <button class="secondary" type="button" onclick="openPartTag('${escapeHtml(String(item.local_key)).replace(/'/g,"&#39;")}')">Print Part Tag</button>
+        <button class="secondary" type="button" onclick="changeInventoryStockCategory('${inventoryStockCategoryLabel(item)==="Mobile"?"Backstock":"Mobile"}')">Move to ${inventoryStockCategoryLabel(item)==="Mobile"?"Backstock":"Mobile"}</button>
         <button class="secondary" type="button" onclick="markInventoryNeedsReview()">Needs Review</button>
         <button class="danger" type="button" onclick="markInventoryNotFound()">Not Found</button>
       </div>
@@ -160,6 +194,8 @@ function openInventoryVerify(){
   document.getElementById("invQtyLabel").textContent=`Quantity found (${i.quantity_unit||"pcs"}; blank = uncounted)`;
   document.getElementById("invCondition").value=i.condition||"Unspecified";
   document.getElementById("invLocation").value=i.location||"";
+  document.getElementById("invStockCategory").value=inventoryStockCategoryLabel(i);
+  setupInventoryPlacement("inv",i);
   document.getElementById("invPartNumber").value=i.part_number||"";
   document.getElementById("invAssignment").value=i.assignment_type||"General Inventory";
   document.getElementById("invAssignedVehicle").value=i.assigned_vehicle||"";
@@ -205,10 +241,12 @@ async function saveInventoryVerification(){
     alert("Enter a whole-number count of zero or more. Leave an uncounted item blank until counted.");
     return;
   }
+  const stockCategory=document.getElementById("invStockCategory").value;
+  if(!["Mobile","Backstock"].includes(stockCategory)) return;
   const patch={
+    ...inventoryPlacementPatch("inv"),
     quantity,
     condition:document.getElementById("invCondition").value,
-    location:document.getElementById("invLocation").value.trim(),
     part_number:document.getElementById("invPartNumber").value.trim()||null,
     assignment_type:document.getElementById("invAssignment").value,
     assigned_vehicle:document.getElementById("invAssignment").value==="Specific Vehicle" ? (document.getElementById("invAssignedVehicle").value.trim()||null) : null,
@@ -217,12 +255,10 @@ async function saveInventoryVerification(){
     status:quantity===null ? "Uncounted" : quantity===0 ? "Out of Stock" : "In Stock",
     verified_at:new Date().toISOString()
   };
-  if(currentInventoryItem.inventory_bin_id && patch.location!==currentInventoryItem.location){
-    patch.inventory_bin_id=null;
-  }
   const saved=await persistInventoryPatch(currentInventoryItem,patch);
   if(!saved) return;
   Object.assign(currentInventoryItem,patch);
+  renderInventoryResults();
   openInventoryDetail(currentInventoryItem.local_key,"replace");
 }
 async function markInventoryNeedsReview(){
@@ -231,6 +267,7 @@ async function markInventoryNeedsReview(){
   const saved=await persistInventoryPatch(currentInventoryItem,patch);
   if(!saved) return;
   Object.assign(currentInventoryItem,patch);
+  renderInventoryResults();
   openInventoryDetail(currentInventoryItem.local_key,"replace");
 }
 async function markInventoryNotFound(){
@@ -240,12 +277,17 @@ async function markInventoryNotFound(){
   const saved=await persistInventoryPatch(currentInventoryItem,patch);
   if(!saved) return;
   Object.assign(currentInventoryItem,patch);
+  renderInventoryResults();
   openInventoryDetail(currentInventoryItem.local_key,"replace");
 }
-function openAddInventory(){
-  ["addItemName","addLocation","addCategory","addPartNumber","addAssignedVehicle","addNotes"].forEach(id=>{const el=document.getElementById(id);if(el)el.value="";});
+async function openAddInventory(){
+  if(!inventoryBinsReady||!inventoryCartsReady) await Promise.all([loadInventoryBins(),loadInventoryCarts()]);
+  ["addItemName","addCategory","addPartNumber","addAssignedVehicle","addNotes"].forEach(id=>{const el=document.getElementById(id);if(el)el.value="";});
   document.getElementById("addQty").value=1;
+  document.getElementById("addStockCategory").value=inventoryStockCategory==="Backstock"?"Backstock":"Mobile";
   document.getElementById("addAssignment").value="General Inventory";
+  document.getElementById("addLocation").value="Unassigned";
+  setupInventoryPlacement("add");
   toggleAddAssignedVehicle();
   showScreen("inventoryAdd");
 }
@@ -258,7 +300,6 @@ async function addInventoryItem(){
   if(!addScreen || !addScreen.classList.contains("active")) return;
 
   const name=document.getElementById("addItemName").value.trim();
-  const location=document.getElementById("addLocation").value.trim();
 
   if(!name){
     alert("Add a part or item name first.");
@@ -271,11 +312,13 @@ async function addInventoryItem(){
     alert("Enter a whole-number count of zero or more.");
     return;
   }
+  const stockCategory=document.getElementById("addStockCategory").value;
+  if(!["Mobile","Backstock"].includes(stockCategory)) return;
   const platform=document.getElementById("addPlatform").value;
   const item={
     inventory_code:newInventoryCode(platform),
+    ...inventoryPlacementPatch("add"),
     platform,
-    location:location||"Location unknown",
     category:document.getElementById("addCategory").value.trim()||"Uncategorized",
     item_name:name,
     quantity,
@@ -319,6 +362,13 @@ async function addInventoryItem(){
     inventoryData.push(liveItem);
     currentInventoryItem=liveItem;
     inventoryFilter="ALL";
+    inventoryStockCategory=stockCategory;
+    inventoryCartFilter="ALL";
+    document.getElementById("inventoryCartSelect").value="ALL";
+    document.getElementById("inventoryStockCategoryFilter").value=stockCategory;
+    document.getElementById("inventoryPlatformFilter").value="ALL";
+    updateInventoryBrowseTitle();
+    renderInventoryResults();
     openInventoryDetail(liveItem.local_key,"replace");
   }catch(err){
     console.error(err);
