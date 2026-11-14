@@ -4,7 +4,7 @@ Trackside-friendly team feedback, post-event reporting, administration, and shar
 
 ## Current release
 
-V1.2.0 uses GitHub Pages for the portal and Supabase for shared submissions and inventory. Inventory is divided into Mobile (travels with the team) and Backstock (stays at the shop), with independent Cart A/B bin locations for each chassis. The inventory has 92 F22, 123 E92, 103 F30, and 58 Boxster records (376 total), with five unknown counts preserved. All existing records start as Mobile. Failed submissions are retained in a device-local queue and retried when connectivity returns.
+V1.2.1 uses GitHub Pages for the portal and Supabase for shared submissions and inventory. Inventory is divided into Mobile (travels with the team) and Backstock (stays at the shop), with independent Cart A/B bin locations for each chassis. The inventory has 92 F22, 123 E92, 103 F30, and 58 Boxster records (376 total), with five unknown counts preserved. All existing records start as Mobile. Failed submissions are retained in a device-local queue and retried when connectivity returns.
 
 ## Project structure
 
@@ -41,6 +41,14 @@ supabase/repair_001_inventory_id_collisions.sql
 ```
 
 The Supabase key in `assets/config.js` is a public/publishable browser key. Access is controlled by Supabase row-level security policies.
+
+## Inventory navigation
+
+Inventory is the first home-page button. Part cards display the Bin ID alongside
+quantity and cart/location; records without a bin show Unassigned. Choose a chassis
+and Open Bins to see its registered IDs and names, including 000 for loose stock,
+in numeric order. Opening a bin shows only records assigned to that bin, with
+separate links for sub-bins. Search Parts remains available on the chassis view.
 
 ## Local preview
 

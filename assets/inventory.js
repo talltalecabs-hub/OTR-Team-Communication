@@ -81,6 +81,7 @@ function updateInventoryBrowseTitle(){
   const labels={"E92":"E92 M3","F22":"F22","986 Boxster":"986 Boxster","F30":"F30 3XX","M235 / M235iR":"M235iR","ALL":"All chassis"};
   const category=inventoryStockCategory==="ALL" ? "All Inventory" : inventoryStockCategory;
   document.getElementById("inventoryBrowseTitle").textContent=`${category} • ${labels[inventoryFilter]||inventoryFilter}`;
+  document.getElementById("chassisBinsHint").textContent=inventoryFilter==="ALL" ? "Browse registered bins by chassis, ID, and name." : `Browse ${labels[inventoryFilter]||inventoryFilter} bins by ID and name, including loose bin 000.`;
 }
 function browseInventory(platform,stockCategory="Mobile"){
   inventoryFilter=platform;
@@ -93,6 +94,12 @@ function browseInventory(platform,stockCategory="Mobile"){
   updateInventoryBrowseTitle();
   showScreen("inventoryBrowse");
   return loadInventory();
+}
+function openChassisBins(){
+  return openBinBrowser(inventoryFilter,"ALL");
+}
+function openChassisPartsSearch(){
+  document.getElementById("inventorySearch").focus();
 }
 function setInventoryFilters(){
   inventoryStockCategory=document.getElementById("inventoryStockCategoryFilter").value;
@@ -141,6 +148,7 @@ function renderInventoryResults(){
     return `<button type="button" class="inventory-card" onclick="openInventoryDetail('${escapeHtml(String(item.local_key)).replace(/'/g,"&#39;")}')">
       <strong>${escapeHtml(item.item_name||"Unnamed item")}</strong>
       <div class="meta">${escapeHtml(item.platform||"Unassigned platform")} • ${escapeHtml(item.category||"Uncategorized")}</div>
+      <div class="meta inventory-card-bin">Bin: <span class="label-mono">${escapeHtml(inventoryItemBinDisplayLabel(item))}</span></div>
       <div class="meta"><span class="qty">Qty ${escapeHtml(inventoryQuantityLabel(item))}</span> • 📍 ${escapeHtml(inventoryItemLocationLabel(item))}</div>
       <div class="meta" style="margin-top:9px">${invBadge(item.verification_status)} <span class="inv-badge direct">${escapeHtml(inventoryStockCategoryLabel(item))}</span> ${direct}</div>
     </button>`;

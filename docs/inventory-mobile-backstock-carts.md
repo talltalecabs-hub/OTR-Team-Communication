@@ -11,10 +11,14 @@ empty and can be populated as shop-held stock is added or reclassified.
 
 ## Browse and classify stock
 
-Open Inventory Assistant and choose Mobile Inventory or Backstock. Mobile opens
+Choose Inventory directly on the home page, then Mobile Inventory or Backstock. Mobile opens
 the existing chassis selections; Backstock can also be filtered by chassis.
-Search All Inventory includes both categories. Browse filters combine inventory
-category, chassis, and cart location.
+Search All Inventory includes both categories. Part cards display the assigned Bin ID without opening the item. Browse filters combine inventory
+category, chassis, and cart location. Choose Open Bins from a chassis view to
+browse all its registered bins, including 000, by ID and name in numeric order.
+The bin list starts with all carts and can be narrowed afterward. Opening a bin
+shows its direct contents only; sub-bins have separate links. Search Parts stays
+available for cross-bin part lookup.
 
 When adding inventory, choose Mobile or Backstock. Each item detail also has
 Move to Backstock / Move to Mobile, which changes the category of the whole

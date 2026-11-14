@@ -20,6 +20,8 @@ const runtimeChecks={
   sendToSupabase,
   loadInventory,
   openMobileInventory,
+  openChassisBins,
+  openChassisPartsSearch,
   changeInventoryStockCategory,
   setInventoryFilters,
   saveBinCartLocation,

@@ -528,19 +528,32 @@ async function openBinBrowser(model="ALL",cart="ALL"){
   renderBinResults();
 }
 
+function inventoryBinDisplayName(bin){
+  if(isLooseInventoryBin(bin)) return "Loose / bulky items";
+  return bin.name||bin.description||[bin.system,bin.subsystem].filter(Boolean).join(" / ")||"Unnamed bin";
+}
+
+function compareInventoryBins(left,right){
+  const number=bin=>Number(bin.bin_code.match(/-(\d{3,})(?:-[A-Z]+)?$/i)?.[1]??Infinity);
+  const difference=number(left)-number(right);
+  return (Number.isNaN(difference)?0:difference)||left.bin_code.localeCompare(right.bin_code,undefined,{numeric:true});
+}
+
 function renderBinResults(){
   const wrap=document.getElementById("binResults");
   if(!wrap) return;
   const q=(document.getElementById("binSearch")?.value||"").trim().toLowerCase();
+  const selectedModel=document.getElementById("binChassisFilter").value;
+  document.getElementById("binBrowseTitle").textContent=`${selectedModel==="ALL"?"All Chassis":selectedModel} — Open Bins`;
   const rows=inventoryBins.filter(bin=>{
     const model=document.getElementById("binChassisFilter").value;
     const cart=document.getElementById("binCartFilter").value;
     if(model!=="ALL" && bin.model!==model) return false;
     if(cart!=="ALL" && (bin.cart_location||"UNASSIGNED")!==cart) return false;
     if(!q) return true;
-    return [bin.bin_code,bin.make,bin.model,bin.system,bin.subsystem,bin.location,bin.description,binCartLocationLabel(bin)]
+    return [bin.bin_code,inventoryBinDisplayName(bin),bin.make,bin.model,bin.system,bin.subsystem,bin.location,bin.description,binCartLocationLabel(bin)]
       .filter(Boolean).join(" ").toLowerCase().includes(q);
-  });
+  }).sort(compareInventoryBins);
   const count=document.getElementById("binCount");
   if(count) count.textContent=`${rows.length} bin${rows.length===1?"":"s"}`;
   if(!rows.length){
@@ -549,10 +562,10 @@ function renderBinResults(){
   }
   wrap.innerHTML=rows.map(bin=>`<button type="button" class="inventory-card" onclick="openBinDetail('${escapeHtml(String(bin.bin_code)).replace(/'/g,"&#39;")}')">
     <strong>${escapeHtml(bin.bin_code)}</strong>
+    <div class="meta bin-card-name">${escapeHtml(inventoryBinDisplayName(bin))}</div>
     <div class="meta">${escapeHtml(bin.make)} • ${escapeHtml(bin.model)}</div>
-    <div class="meta">${escapeHtml(bin.system)}${bin.subsystem?` • ${escapeHtml(bin.subsystem)}`:""}</div>
-    <div class="meta">📍 ${escapeHtml(bin.location||"Location not set")}</div>
-    <div class="meta">Cart: ${escapeHtml(binCartLocationLabel(bin))}</div>
+    <div class="meta">Location: ${escapeHtml(binCartLocationLabel(bin))}</div>
+    ${inventoryBackendReady?`<div class="meta">${itemsForBin(bin).length} direct item records${inventoryBins.some(child=>child.parent_bin_id===bin.id)?" • Has sub-bins":""}</div>`:""}
   </button>`).join("");
 }
 
@@ -575,7 +588,7 @@ async function openBinDetail(key,historyMode="push"){
     <div class="bin-heading-row">
       <div>
         <div class="eyebrow">BIN</div>
-        <h2 class="sectiontitle" style="margin-bottom:5px">${escapeHtml(bin.bin_code)}</h2>
+        <h2 class="sectiontitle" style="margin-bottom:5px">${escapeHtml(bin.bin_code)} — ${escapeHtml(inventoryBinDisplayName(bin))}</h2>
         <p class="subtitle">${escapeHtml(bin.make)} • ${escapeHtml(bin.model)} • ${escapeHtml(bin.system)}${bin.subsystem?` • ${escapeHtml(bin.subsystem)}`:""}</p>
       </div>
       <span class="inv-badge verified">${escapeHtml(bin.status||"Active").toUpperCase()}</span>
@@ -600,9 +613,10 @@ async function openBinDetail(key,historyMode="push"){
     </div>
     ${children.length?`<h3 style="margin:22px 0 10px">Sub-bins</h3><div class="inventory-results">${children.map(child=>`<button type="button" class="inventory-card" onclick="openBinDetail('${escapeHtml(child.bin_code)}')"><strong>${escapeHtml(child.bin_code)}</strong><div class="meta">${escapeHtml(child.description||child.system)} • ${itemsForBin(child).length} direct records • ${escapeHtml(binCartLocationLabel(child))}</div></button>`).join("")}</div>`:""}
     <h3 style="margin:22px 0 10px">Contents</h3>
-    <div class="inventory-results">${items.length?items.map(item=>`<button type="button" class="inventory-card" onclick="openInventoryDetail('${escapeHtml(String(item.local_key)).replace(/'/g,"&#39;")}')">
+    <div id="binContents" class="inventory-results">${items.length?items.map(item=>`<button type="button" class="inventory-card" onclick="openInventoryDetail('${escapeHtml(String(item.local_key)).replace(/'/g,"&#39;")}')">
       <strong>${escapeHtml(item.item_name||"Unnamed item")}</strong>
-      <div class="meta"><span class="qty">Qty ${escapeHtml(inventoryQuantityLabel(item))}</span> • ${escapeHtml(item.condition||"Unspecified")}</div>
+      <div class="meta inventory-card-bin">Bin: <span class="label-mono">${escapeHtml(inventoryItemBinDisplayLabel(item))}</span></div>
+    <div class="meta"><span class="qty">Qty ${escapeHtml(inventoryQuantityLabel(item))}</span> • ${escapeHtml(item.condition||"Unspecified")}</div>
       <div class="meta">${escapeHtml(item.part_number||item.inventory_code||"")}</div><div class="meta">Location: ${escapeHtml(inventoryItemLocationLabel(item))}</div>
       ${item.reorder_flag?'<div class="meta" style="margin-top:8px"><span class="inv-badge review">REORDER</span></div>':""}
     </button>`).join(""):'<div class="card"><strong>No individually tagged stock recorded directly in this bin.</strong><p class="small">This does not establish a physical count of zero. Review any sub-bins or count the contents.</p></div>'}</div>`;
@@ -657,6 +671,7 @@ function renderAssignPartMatches(){
   }).slice(0,40);
   wrap.innerHTML=rows.map(item=>`<button type="button" class="inventory-card" onclick="selectPartForBin('${escapeHtml(String(item.local_key)).replace(/'/g,"&#39;")}')">
     <strong>${escapeHtml(item.item_name||"Unnamed item")}</strong>
+    <div class="meta inventory-card-bin">Bin: <span class="label-mono">${escapeHtml(inventoryItemBinDisplayLabel(item))}</span></div>
     <div class="meta"><span class="qty">Qty ${escapeHtml(inventoryQuantityLabel(item))}</span> • ${escapeHtml(inventoryStockCategoryLabel(item))} • ${escapeHtml(item.platform||"Unassigned")}</div>
     <div class="meta">📍 ${escapeHtml(item.location||"Location unknown")}</div>
   </button>`).join("");
@@ -728,6 +743,12 @@ async function assignSelectedPartToBin(){
 function inventoryItemBinLabel(item){
   if(!item?.inventory_bin_id) return "";
   return findInventoryBin(item.inventory_bin_id)?.bin_code||"";
+}
+
+function inventoryItemBinDisplayLabel(item){
+  const code=inventoryItemBinLabel(item);
+  if(code) return code;
+  return item.inventory_bin_id ? item.location||"Assigned (details unavailable)" : "Unassigned";
 }
 
 function stablePartTagId(item){

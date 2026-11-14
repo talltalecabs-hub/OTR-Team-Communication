@@ -66,7 +66,7 @@ with sync_playwright() as p:
         missing=page.evaluate(r'''() => [...document.querySelectorAll('*')].flatMap(e=>[...e.attributes].filter(a=>/^on/.test(a.name)).flatMap(a=>[...a.value.matchAll(/\b([A-Za-z_$][\w$]*)\s*\(/g)].map(m=>m[1]))).filter(n=>typeof window[n]!=='function')''')
         assert not missing,missing
     handlers()
-    assert page.evaluate('APP_VERSION')=='1.2.0'
+    assert page.evaluate('APP_VERSION')=='1.2.1'
     page.evaluate('openInventoryAssistant()');page.locator('#inventoryHome [onclick="openMobileInventory()"] ').click()
     assert page.locator('#inventoryMobile.active').count()==1
     page.evaluate('browseInventory("F30")');page.wait_for_function('inventoryBackendReady')
@@ -76,6 +76,7 @@ with sync_playwright() as p:
     page.evaluate('browseInventory("ALL","Backstock")')
     assert page.locator('#inventoryResults .inventory-card').count()==1
     assert 'Shop Bolts' in page.locator('#inventoryResults').inner_text()
+    assert page.locator('#inventoryResults .inventory-card-bin').inner_text()=='Bin: Unassigned'
     page.select_option('#inventoryPlatformFilter','F30')
     page.select_option('#inventoryStockCategoryFilter','ALL')
     assert page.locator('#inventoryResults .inventory-card').count()==2
@@ -202,7 +203,53 @@ with sync_playwright() as p:
     offline=False;page.evaluate('syncQueue()');assert page.evaluate('getStore().length')==0
     for key in page.evaluate('Object.keys(operationalFormDefinitions)'):
         page.evaluate('(key)=>openOperationalForm(key)',key);handlers()
+    # Home shortcut, visible part Bin IDs, and chassis-scoped bin browsing.
+    for index,(code,name,cart) in enumerate([('F30-010',None,'B'),('F30-002','Cooling & hoses','A'),('F30-001','Engine hardware','A')]):
+        bins.append(dict(bins[0],id=f'88888888-8888-4888-8888-{index:012d}',bin_code=code,description=name,system='Spare rotors' if name is None else name,cart_location=cart))
+    cooling=next(row for row in bins if row['bin_code']=='F30-002')
+    rotors=next(row for row in bins if row['bin_code']=='F30-010')
+    created_items.extend([
+        dict(id='99999999-9999-4999-8999-000000000001',inventory_code='DIRECTORY-COOLING',item_name='Only Cooling Bin',platform='F30',quantity=2,stock_category='Mobile',inventory_bin_id=cooling['id'],location='F30-002'),
+        dict(id='99999999-9999-4999-8999-000000000002',inventory_code='DIRECTORY-OTHER',item_name='Other Bin Part',platform='F30',quantity=3,stock_category='Mobile',inventory_bin_id=rotors['id'],location='F30-002')
+    ])
+    before_reads=len(writes)
+    page.goto(base_url);page.wait_for_function('vehicleRegistryReady')
+    assert page.locator('#home .grid button').first.get_attribute('id')=='homeInventoryButton'
+    page.locator('#homeInventoryButton').click();page.wait_for_selector('#inventoryHome.active')
+    page.locator('#inventoryHome .back').click();page.wait_for_selector('#home.active')
+    page.locator('#homeInventoryButton').click();page.locator('#inventoryHome [onclick="openMobileInventory()"] ').click()
+    page.locator('#inventoryMobile').get_by_role('button',name=re.compile('^F30 3XX')).click()
+    page.wait_for_function('document.getElementById("inventoryResults").textContent.includes("Only Cooling Bin")')
+    assert page.locator('#inventoryResults .inventory-card',has_text='Only Cooling Bin').locator('.inventory-card-bin').inner_text()=='Bin: F30-002'
+    assert page.locator('#inventoryResults .inventory-card',has_text='Other Bin Part').locator('.inventory-card-bin').inner_text()=='Bin: F30-010'
+    page.select_option('#inventoryCartSelect','F30-B')
+    page.locator('#openChassisBinsButton').click()
+    page.wait_for_function('document.getElementById("binChassisFilter").value==="F30" && document.getElementById("binResults").textContent.includes("F30-000")')
+    assert page.input_value('#binCartFilter')=='ALL'
+    codes=page.locator('#binResults .inventory-card > strong').all_text_contents()
+    assert codes[:4]==['F30-000','F30-001','F30-002','F30-010'],codes
+    assert not any(code.startswith('E92-') for code in codes)
+    assert 'Cooling & hoses' in page.locator('#binResults').inner_text()
+    assert 'Spare rotors' in page.locator('#binResults').inner_text()
+    page.screenshot(path=str(output/'chassis-open-bins.png'),full_page=True)
+    handlers()
+    page.locator('#binResults .inventory-card',has_text='F30-002').click();page.wait_for_selector('#binDetail.active')
+    assert page.locator('#binContents .inventory-card').count()==1
+    assert 'Only Cooling Bin' in page.locator('#binContents').inner_text()
+    assert 'Other Bin Part' not in page.locator('#binContents').inner_text()
+    page.locator('#binContents .inventory-card').click();page.wait_for_selector('#inventoryDetail.active')
+    page.locator('#inventoryDetail .back').click();page.wait_for_selector('#binDetail.active')
+    page.locator('#binDetail .back').click();page.wait_for_selector('#binBrowse.active')
+    page.locator('#binResults .inventory-card',has_text='F30-000').click();page.wait_for_selector('#binDetail.active')
+    assert page.locator('#binContents .inventory-card').count()==2
+    assert 'Loose rotor F30-A' in page.locator('#binContents').inner_text() and 'Loose rotor F30-B' in page.locator('#binContents').inner_text()
+    page.locator('#binDetail .back').click();page.wait_for_selector('#binBrowse.active')
+    page.locator('#binBrowse .back').click();page.wait_for_selector('#inventoryBrowse.active')
+    page.locator('#searchChassisPartsButton').click();assert page.locator('#inventorySearch').evaluate('(e)=>document.activeElement===e')
+    page.screenshot(path=str(output/'part-card-bin-ids.png'),full_page=True)
+    assert len(writes)==before_reads
+    handlers()
     assert not errors,errors
-    print(json.dumps({'result':'PASS','screens_with_home_navigation':len(screens),'vehicle_registry':23,'bin_id':bins[0]['bin_code'],'rpc_requests_after_double_submit':1,'part_faces':4,'rotated_faces':2,'print_canvas_px':[384,576],'invalid_quantities_blocked':True,'runtime_errors':errors,'mock_write_count':len(writes),'cart_registry_and_loose_bins':'PASS','chassis_cart_assignment_and_filters':'PASS','mobile_backstock_filters_and_writes':'PASS','unknown_counts_and_units':'PASS','postevent_admin_offline_queue':'PASS','artifacts':str(output)},indent=2))
+    print(json.dumps({'result':'PASS','screens_with_home_navigation':len(screens),'vehicle_registry':23,'bin_id':bins[0]['bin_code'],'rpc_requests_after_double_submit':1,'part_faces':4,'rotated_faces':2,'print_canvas_px':[384,576],'invalid_quantities_blocked':True,'home_inventory_shortcut':'PASS','visible_part_bin_ids':'PASS','scoped_numbered_bin_directory':'PASS','exact_bin_contents_and_navigation':'PASS','runtime_errors':errors,'mock_write_count':len(writes),'cart_registry_and_loose_bins':'PASS','chassis_cart_assignment_and_filters':'PASS','mobile_backstock_filters_and_writes':'PASS','unknown_counts_and_units':'PASS','postevent_admin_offline_queue':'PASS','artifacts':str(output)},indent=2))
     browser.close()
 server.shutdown()
