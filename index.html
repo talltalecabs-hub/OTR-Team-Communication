@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#111111" />
   <title>OTR Team Portal — V1</title>
-  <link rel="stylesheet" href="assets/styles.css?v=1.2.0" />
+  <link rel="stylesheet" href="assets/styles.css?v=1.2.1" />
 </head>
 <body>
 <div class="app">
@@ -24,9 +24,13 @@
     <div class="hero home-intro">
       <div class="eyebrow">TEAM COMMUNICATIONS</div>
       <h2>What would you like to do?</h2>
-      <p>You can submit feedback in under a minute or go deeper when you have time.</p>
+      <p>Find inventory, record event notes, or share team feedback.</p>
     </div>
     <div class="grid">
+      <button id="homeInventoryButton" class="bigbtn live-feature accent" type="button" onclick="openInventoryAssistant()" style="grid-column:1/-1">
+        <strong>Inventory</strong>
+        <span>Find parts, open chassis bins, and manage Mobile or Backstock inventory.</span>
+      </button>
       <button class="bigbtn live-feature" onclick="showScreen('categories')">
         <strong>Feedback</strong>
         <span>Quick, optionally anonymous feedback about any team system.</span>
@@ -179,7 +183,7 @@
   </section>
 
   <section id="inventoryHome" class="screen">
-    <button class="secondary back" type="button" onclick="portalBack('shopTalk')">← Shop Talk</button>
+    <button class="secondary back" type="button" onclick="portalBack('shopTalk')">← Back</button>
     <div class="hero" style="background:linear-gradient(135deg,rgba(183,255,34,.13),transparent 58%),var(--panel);border-left:8px solid var(--accent);padding:22px">
       <div class="eyebrow">INVENTORY ASSISTANT V1</div>
       <h2 style="font-size:32px;margin:8px 0 7px">What are you looking for?</h2>
@@ -217,12 +221,15 @@
   <section id="inventoryBrowse" class="screen">
     <button class="secondary back" type="button" onclick="portalBack(inventoryStockCategory==='Mobile'?'inventoryMobile':'inventoryHome')">← Inventory Assistant</button>
     <h2 id="inventoryBrowseTitle" class="sectiontitle">Inventory</h2>
+    <div class="grid">
+      <button id="openChassisBinsButton" class="bigbtn live-feature accent" type="button" onclick="openChassisBins()"><strong>Open Bins</strong><span id="chassisBinsHint">Browse this chassis's bins by ID and name, including loose bin 000.</span></button>
+      <button id="searchChassisPartsButton" class="bigbtn live-feature" type="button" onclick="openChassisPartsSearch()"><strong>Search Parts</strong><span>Find individual parts across the selected chassis inventory.</span></button>
+    </div>
     <div class="inventory-form-grid">
       <div><label for="inventoryStockCategoryFilter">Inventory category</label><select id="inventoryStockCategoryFilter" onchange="setInventoryFilters()"><option value="ALL">Mobile + Backstock</option><option>Mobile</option><option>Backstock</option></select></div>
       <div><label for="inventoryPlatformFilter">Chassis</label><select id="inventoryPlatformFilter" onchange="setInventoryFilters()"><option value="ALL">All chassis</option><option>E92</option><option>F22</option><option>F30</option><option>986 Boxster</option><option>M235 / M235iR</option><option>E46</option><option>Non-Race</option><option>Tow</option><option>Trailer</option></select></div>
       <div><label for="inventoryCartSelect">Location</label><select id="inventoryCartSelect" onchange="setInventoryFilters()"><option value="ALL">All locations</option><option>Backstock</option><option>Unassigned</option></select></div>
     </div>
-    <div class="actions"><button class="secondary" type="button" onclick="openBinBrowser(inventoryFilter,inventoryCartFilter)">Bins / Cart Assignments</button></div>
     <div class="inventory-toolbar" style="grid-template-columns:1fr">
       <input id="inventorySearch" class="inventory-search" type="search" placeholder="Search part, location, category, condition..." oninput="renderInventoryResults()" />
     </div>
@@ -462,7 +469,7 @@
 
   <section id="binBrowse" class="screen">
     <button class="secondary back" type="button" onclick="portalBack('labelAssistantHome')">← Label Assistant</button>
-    <h2 class="sectiontitle">Open Bin</h2>
+    <h2 id="binBrowseTitle" class="sectiontitle">Open Bins</h2>
     <div class="inventory-form-grid">
       <div><label for="binChassisFilter">Chassis</label><select id="binChassisFilter" onchange="renderBinResults()"><option value="ALL">All chassis</option></select></div>
       <div><label for="binCartFilter">Cart location</label><select id="binCartFilter" onchange="renderBinResults()"><option value="ALL">All carts / locations</option><option value="A">Cart A</option><option value="B">Cart B</option><option value="UNASSIGNED">Unassigned</option></select></div>
@@ -800,11 +807,11 @@
   </section>
 </div>
 
-<script src="assets/config.js?v=1.2.0"></script>
-<script src="assets/core.js?v=1.2.0"></script>
-<script src="assets/submissions.js?v=1.2.0"></script>
-<script src="assets/inventory.js?v=1.2.0"></script>
-<script src="assets/labels.js?v=1.2.0"></script>
-<script src="assets/bootstrap.js?v=1.2.0"></script>
+<script src="assets/config.js?v=1.2.1"></script>
+<script src="assets/core.js?v=1.2.1"></script>
+<script src="assets/submissions.js?v=1.2.1"></script>
+<script src="assets/inventory.js?v=1.2.1"></script>
+<script src="assets/labels.js?v=1.2.1"></script>
+<script src="assets/bootstrap.js?v=1.2.1"></script>
 </body>
 </html>

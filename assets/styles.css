@@ -234,6 +234,8 @@
 
 
     /* Inventory Assistant V1 */
+    .inventory-card-bin{font-weight:800;color:var(--text)}
+    .bin-card-name{font-weight:800}
     .inventory-toolbar{
       display:grid;
       grid-template-columns:minmax(0,1fr) auto;
