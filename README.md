@@ -4,7 +4,9 @@ Trackside-friendly team feedback, post-event reporting, administration, and shar
 
 ## Current release
 
-V1.2.1 uses GitHub Pages for the portal and Supabase for shared submissions and inventory. Inventory is divided into Mobile (travels with the team) and Backstock (stays at the shop), with independent Cart A/B bin locations for each chassis. The inventory has 92 F22, 123 E92, 103 F30, and 58 Boxster records (376 total), with five unknown counts preserved. All existing records start as Mobile. Failed submissions are retained in a device-local queue and retried when connectivity returns.
+Production remains V1.2.1 on GitHub Pages, with Supabase authoritative for shared submissions, inventory, and the exact vehicle registry. Mobile inventory travels with the team; Backstock stays at the shop. Each race chassis has independent Cart A/B locations. Failed submissions stay in a device-local queue and retry when connectivity returns. Current counts change as the crew works; the historical seed is not the live inventory count.
+
+This branch prepares V1.3.0 for PR review: a search-first crew workflow, atomic Use Part consumption, required initials for inventory changes, and an append-only activity ledger. It has not been deployed, and its production migration has not been applied. See [Inventory crew workflow](docs/inventory-crew-workflow.md) for behavior, local checks, and the coordinated rollout requirements.
 
 ## Project structure
 
@@ -16,7 +18,10 @@ assets/core.js             Navigation, shared state, and UI utilities
 assets/submissions.js      Feedback, post-event, admin, and offline queue
 assets/inventory.js        Supabase-backed Inventory Assistant
 assets/labels.js           Inventory Label & Bin Assistant + 4x6 print layouts
+assets/crew.js             Use Part, initials, and inventory activity viewer
 assets/bootstrap.js        Startup checks and queue synchronization
+supabase/migrations/20261114225322_inventory_crew_workflow.sql
+                           Prepared inventory ledger, write guards, and atomic Use/Move RPCs
 supabase/schema.sql        Inventory table and current beta policies
 supabase/vehicles_schema.sql
                            Exact vehicle registry, inventory assignment key, and 23 vehicle seeds
@@ -44,11 +49,17 @@ The Supabase key in `assets/config.js` is a public/publishable browser key. Acce
 
 ## Inventory navigation
 
-Inventory is the first home-page button. Part cards display the Bin ID alongside
-quantity and cart/location; records without a bin show Unassigned. Choose a chassis
-and Open Bins to see its registered IDs and names, including 000 for loose stock,
-in numeric order. Opening a bin shows only records assigned to that bin, with
-separate links for sub-bins. Search Parts remains available on the chassis view.
+Inventory is the first home-page button. The Inventory landing offers **Mobile
+Inventory Search** and **Inventory Management**. Mobile search opens immediately
+across chassis, with optional chassis/location filters and Open Bins. Cards show
+cart/location and Bin ID together. Opening a part prioritizes **Use Part**, which
+records consumption against an exact vehicle without changing stock placement.
+
+Inventory Management contains Backstock, Search All, Add Part, Bins & Placement,
+Fast Move, and Inventory Activity. Corrections, flags, placement, and label actions
+remain available through a part's management screen. Open Bins lists chassis bins
+in numeric order, including 000 for loose stock; opening a bin shows only its
+direct contents, with separate links to sub-bins.
 
 ## Local preview
 
@@ -56,7 +67,7 @@ Serve this directory with any static web server, then open `index.html`. Avoid o
 
 ## Deployment
 
-GitHub Pages publishes the root of the `main` branch. Changes should be previewed and regression-tested before merging or replacing the live files.
+GitHub Pages publishes the root of `main`. This branch is for PR review only. Do not merge or apply its migration until rollout is separately authorized. V1.3.0 requires a coordinated database/frontend release and refreshed browser tabs; see the [compatibility and rollout notes](docs/inventory-crew-workflow.md#compatibility-and-future-rollout).
 
 ## Required checks
 
@@ -70,12 +81,15 @@ GitHub Pages publishes the root of the `main` branch. Changes should be previewe
 - Prepared replacement has 92 F22 and 123 E92 labels, five unknown counts, and printed set/lot units. F30 and Boxster rows are preserved exactly.
 - Chassis selectors offer the seeded exact vehicle registry (23 vehicles across race, street, tow, and trailer platforms).
 - Label Assistant handlers resolve, 4×6 print rules are present, and the existing 297-record inventory seed remains unchanged.
+- Use Part and Fast Move commit inventory changes and ledger events atomically.
+- Inventory writes require visible initials; audit history is append-only for portal users.
+- Known stock cannot be consumed below zero; unknown stock remains uncounted after use.
 
-To enable exact vehicle selectors in Supabase, run `supabase/schema.sql` (if needed), then run `supabase/vehicles_schema.sql` in the SQL editor. The second script is safe to rerun and upserts the current registry without creating duplicates.
+For a new empty environment, install `supabase/schema.sql` and `supabase/vehicles_schema.sql` before the dependent inventory schemas. The current deployment already has the exact vehicle registry; V1.3.0 does not replace or reseed it.
 
 The Label Assistant uses only 4×6 thermal adhesive stock. Full bin labels occupy a 4×6 sheet; individual part labels use that same stock in a fold-wrap prototype around a 2×3 paper tag. There is no separate 2×3 media or printer path. Physical fold geometry and barcode scanning still require a printer test.
 
-Production activation is complete. See [F22/E92 inventory update](docs/inventory-f22-e92-update.md) for source totals, private backups, rollout results, and deployment order for another environment: label schema, count schema, then replacement SQL. Frontend and database rollout must be coordinated; merging the frontend alone does not update shared inventory. Do not rerun the historical seed after the replacement.
+The earlier F22/E92 production activation is complete. See [F22/E92 inventory update](docs/inventory-f22-e92-update.md) for source totals, private backups, rollout results, and deployment order for another environment: label schema, count schema, then replacement SQL. Frontend and database rollout must be coordinated; merging the frontend alone does not update shared inventory. Do not rerun the historical seed after the replacement.
 
 See [Mobile, Backstock, and cart locations](docs/inventory-mobile-backstock-carts.md) for inventory category selection, cart assignment, the confirmed E92 map, and the V1.1-to-V1.2 upgrade. Quantities, part categories, bin identities, and source records are preserved.
 
@@ -90,10 +104,13 @@ For isolated PostgreSQL regression tests (no production connection):
 ```bash
 npm install --prefix /tmp/otr-db-test --no-audit --no-fund --ignore-scripts @electric-sql/pglite@0.3.14
 PGLITE_MODULE=/tmp/otr-db-test/node_modules/@electric-sql/pglite/dist/index.js node scripts/test_inventory_update.mjs
+PGLITE_MODULE=/tmp/otr-db-test/node_modules/@electric-sql/pglite/dist/index.js node scripts/test_inventory_crew.mjs
 ```
 
-With Python Playwright and Chromium installed, `python scripts/test_portal.py` runs local browser regressions against a simulated Supabase backend. It never connects to production. Set `CHROMIUM_PATH` if needed and `OTR_TEST_OUTPUT` to retain label PDFs and the preview screenshot in a chosen directory.
+With Python Playwright and Chromium installed, `python scripts/test_portal.py` runs local browser regressions against a simulated Supabase backend. It never connects to production. Set `CHROMIUM_PATH` if needed and `OTR_TEST_OUTPUT` to retain screenshots in a chosen directory.
 
 ## Beta security note
 
 The current V1 deployment intentionally allows anonymous inventory reads/inserts/updates and anonymous Admin reads. Replace those beta policies with authenticated crew access before broad public use.
+
+V1.3.0 initials provide recorded accountability, not authenticated identity. The ledger adds database-enforced auditing within the existing beta access model; it does not introduce authentication.

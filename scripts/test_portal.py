@@ -1,255 +1,790 @@
 #!/usr/bin/env python3
-"""Local browser regression with intercepted Supabase requests; no production reads/writes.
-Requires Python Playwright and Chromium (CHROMIUM_PATH overrides /usr/bin/chromium).
-PDFs and screenshot go to OTR_TEST_OUTPUT or a temporary directory.
+"""Local portal regression with an intercepted, stateful Supabase fixture.
+
+No production connections or writes are made. Install Python Playwright and
+Chromium; CHROMIUM_PATH overrides /usr/bin/chromium. OTR_TEST_OUTPUT retains
+screenshots. Real PostgreSQL atomicity/RLS tests live in test_inventory_crew.mjs.
 """
-import os, tempfile
-import json, re, threading, functools
+import copy
+import functools
+import json
+import os
+import re
+import tempfile
+import threading
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+from urllib.parse import parse_qs, urlsplit
+
 from playwright.sync_api import sync_playwright
 
-root=Path(__file__).resolve().parents[1]
-output=Path(os.environ.get('OTR_TEST_OUTPUT',tempfile.mkdtemp(prefix='otr-portal-check-')))
-output.mkdir(parents=True,exist_ok=True)
-class QuietHandler(SimpleHTTPRequestHandler):
-    def log_message(self,*args): pass
-server=ThreadingHTTPServer(('127.0.0.1',0),functools.partial(QuietHandler,directory=str(root)))
-threading.Thread(target=server.serve_forever,daemon=True).start()
-base_url=f'http://127.0.0.1:{server.server_address[1]}'
-item=dict(id='11111111-1111-4111-8111-111111111111',inventory_code='TEST-01',local_key='TEST-01',item_name='Brake Pads',quantity=10,platform='F30',location='Shelf A',category='Brakes',condition='New',verification_status='Verified')
-registry_source=(root/'assets/core.js').read_text().split('const fallbackVehicleRegistry = ',1)[1].split(';',1)[0]
-registry=json.loads(re.sub(r'([a-z_]+):',r'"\1":',registry_source))
-backstock_item=dict(id='44444444-4444-4444-8444-444444444444',inventory_code='SHOP-01',local_key='SHOP-01',item_name='Shop Bolts',quantity=6,platform='F30',location='Shop shelf',category='Fasteners',condition='New',stock_category='Backstock')
-carts=[{'cart_code':f'{code}-{letter}','platform':platform,'cart_letter':letter} for platform,code in [('E92','E92'),('F22','F22'),('F30','F30'),('986 Boxster','986')] for letter in ['A','B']]
-created_items=[]
-bins=[]; writes=[]; errors=[]; alerts=[]; submissions=[]; offline=False
-def route_api(route):
-    request=route.request; path=request.url.split('/rest/v1/')[-1].split('?')[0]
-    if offline and path=='submissions':
-        route.abort('internetdisconnected');return
-    data=request.post_data_json if request.method in ['POST','PATCH'] else None
-    if request.method!='GET': writes.append((path,data))
-    if path=='vehicles': result=registry
-    elif path=='inventory_carts': result=carts
-    elif path=='inventory_bins':
-        if request.method=='POST': bins.append(dict(data,id='22222222-2222-4222-8222-222222222222'))
-        if request.method=='PATCH':
-            target=next(row for row in bins if 'id=eq.'+row['id'] in request.url);target.update(data)
-        result=bins
-    elif path=='inventory_items':
-        if request.method=='PATCH':
-            target=next(row for row in [item,backstock_item,*created_items] if 'id=eq.'+row['id'] in request.url)
-            target.update(data)
-        if request.method=='POST':
-            saved=dict(data,id='55555555-5555-4555-8555-'+f'{len(created_items)+1:012d}');created_items.append(saved);result=[saved]
-        else: result=[item,backstock_item,*created_items]
-    elif path=='rpc/assign_inventory_to_bin':
-        dest=next(row for row in bins if row['id']==data['p_bin_id']);item.update(inventory_bin_id=dest['id'],location=dest['bin_code'],cart_code=data.get('p_cart_code'));result=item['id']
-    elif path=='submissions':
-        if request.method=='POST': submissions.append(dict(data,id=str(len(submissions)+1)))
-        result=submissions
-    else: raise Exception(path)
-    route.fulfill(status=200,content_type='application/json',body=json.dumps(result),headers={'access-control-allow-origin':'*'})
+ROOT = Path(__file__).resolve().parents[1]
+OUTPUT = Path(os.environ.get("OTR_TEST_OUTPUT", tempfile.mkdtemp(prefix="otr-crew-check-")))
+OUTPUT.mkdir(parents=True, exist_ok=True)
 
-with sync_playwright() as p:
-    browser=p.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH','/usr/bin/chromium'),headless=True,args=['--no-sandbox'])
-    page=browser.new_page(viewport={'width':1280,'height':1000})
-    page.route('**/rest/v1/**',route_api)
-    page.on('pageerror',lambda e:errors.append(str(e)))
-    page.on('dialog',lambda d:(alerts.append(d.message),d.accept()))
+
+def uid(number):
+    return f"00000000-0000-4000-8000-{number:012d}"
+
+
+registry_source = (ROOT / "assets/core.js").read_text().split("const fallbackVehicleRegistry = ", 1)[1].split(";", 1)[0]
+REGISTRY = json.loads(re.sub(r"([a-z_]+):", r'"\1":', registry_source))
+CARTS = [
+    {"cart_code": f"{code}-{letter}", "platform": platform, "cart_letter": letter}
+    for platform, code in [("E92", "E92"), ("F22", "F22"), ("F30", "F30"), ("986 Boxster", "986")]
+    for letter in ["A", "B"]
+]
+
+
+def make_bin(number, code, model, name, cart=None, parent=None):
+    return dict(id=uid(number), bin_code=code, model=model, make="Porsche" if model == "986 Boxster" else "BMW",
+                make_prefix="P" if model == "986 Boxster" else "B", system=name, description=name,
+                cart_location=cart, parent_bin_id=parent, label_format="4x6", status="Active")
+
+
+def make_item(number, code, name, platform="E92", quantity=3, bin_id=None, cart=None, stock="Mobile", unit="pcs"):
+    physical_bin = next((row for row in INITIAL_BINS if row["id"] == bin_id), None)
+    return dict(id=uid(number), inventory_code=code, item_name=name, platform=platform, quantity=quantity,
+                inventory_bin_id=bin_id, cart_code=cart, stock_category=stock, quantity_unit=unit,
+                location=physical_bin["bin_code"] if physical_bin else ("Backstock" if stock == "Backstock" else "Unassigned"),
+                category="Cooling" if platform == "E92" else "Spares", condition="New", status="In Stock" if quantity else ("Uncounted" if quantity is None else "Out of Stock"),
+                verification_status="Imported", compatibility=[platform], assignment_type="General Inventory",
+                assigned_vehicle=None, assigned_vehicle_code=None, tag_id=None, source="Crew browser fixture",
+                source_metadata={"source_row": number, "quantity_raw": "VARIOUS" if quantity is None else quantity, "label_text": name.upper()},
+                original_quantity=quantity, original_location=physical_bin["bin_code"] if physical_bin else "Unassigned",
+                original_item_text=name, updated_at="2026-11-14T00:00:00Z")
+
+
+INITIAL_BINS = [
+    make_bin(200, "E92-000", "E92", "Loose inventory"),
+    make_bin(208, "E92-008", "E92", "Cooling system", "A"),
+    make_bin(218, "E92-018", "E92", "Sensors / seals", "A"),
+    make_bin(219, "E92-018-A", "E92", "Sensors", "A", uid(218)),
+    make_bin(220, "E92-018-B", "E92", "Seals", "A", uid(218)),
+    make_bin(221, "E92-019", "E92", "Exhaust", "B"),
+    make_bin(222, "E92-022", "E92", "Uncounted stock", "B"),
+    make_bin(230, "F22-000", "F22", "Loose inventory"),
+    make_bin(231, "F22-001", "F22", "Right rear knuckle"),
+    make_bin(240, "F30-000", "F30", "Loose inventory"),
+    make_bin(241, "F30-001", "F30", "Brake spares", "A"),
+    make_bin(242, "F30-002", "F30", "Cooling & hoses", "B"),
+    make_bin(250, "986-000", "986 Boxster", "Loose inventory"),
+]
+INITIAL_ITEMS = [
+    make_item(1, "E92-KNOWN", "Coolant temperature sensor", bin_id=uid(208)),
+    make_item(2, "E92-UNKNOWN", "Uncounted hardware", quantity=None, bin_id=uid(208)),
+    make_item(3, "E92-ZERO", "Empty coolant gasket lot", quantity=0, bin_id=uid(208)),
+    make_item(4, "E92-FLAGS", "Seal set", quantity=6, bin_id=uid(219), unit="sets"),
+    make_item(5, "F22-SENSOR", "F22 wheel sensor", platform="F22", quantity=2, bin_id=uid(231)),
+    make_item(6, "F30-RETRY", "Retry-safe brake pads", platform="F30", quantity=4, bin_id=uid(241)),
+    make_item(7, "F30-LOOSE-A", "Loose rotor A", platform="F30", quantity=1, bin_id=uid(240), cart="F30-A"),
+    make_item(8, "F30-LOOSE-B", "Loose rotor B", platform="F30", quantity=2, bin_id=uid(240), cart="F30-B"),
+    make_item(9, "SHOP-01", "Shop hose stock", quantity=8, stock="Backstock"),
+]
+# Misleading text must never make a part appear in the wrong bin's contents.
+INITIAL_ITEMS[3]["location"] = "E92-008"
+
+
+class FixtureError(Exception):
+    pass
+
+
+class Backend:
+    def __init__(self):
+        self.items = copy.deepcopy(INITIAL_ITEMS)
+        self.bins = copy.deepcopy(INITIAL_BINS)
+        self.events = []
+        self.submissions = []
+        self.attempts = []
+        self.writes = []
+        self.errors = []
+        self.use_requests = {}
+        self.offline_submissions = False
+        self.lose_next_use_response = False
+        self.hold_next_use_response = False
+        self.held_use_response = None
+        self.next_number = 1000
+
+    def new_id(self):
+        self.next_number += 1
+        return uid(self.next_number)
+
+    def item(self, code):
+        return next(row for row in self.items if row["inventory_code"] == code)
+
+    def find_item(self, item_id):
+        result = next((row for row in self.items if row["id"] == item_id), None)
+        if not result:
+            raise FixtureError("Inventory item not found")
+        return result
+
+    def event(self, kind, actor, before, after, vehicle=None, delta=None, request_id=None):
+        subject = after or before
+        is_item = "inventory_code" in subject
+        bin_id = subject.get("inventory_bin_id") if is_item else subject.get("id")
+        physical_bin = next((physical for physical in self.bins if physical["id"] == bin_id), None)
+        bin_code = physical_bin["bin_code"] if physical_bin else subject.get("bin_code")
+        cart_code = subject.get("cart_code")
+        if physical_bin and physical_bin.get("cart_location") and not physical_bin["bin_code"].endswith("-000"):
+            chassis = "986" if physical_bin["model"] == "986 Boxster" else physical_bin["model"]
+            cart_code = chassis + "-" + physical_bin["cart_location"]
+        if is_item and subject.get("stock_category") == "Backstock":
+            cart_code = None
+        row = dict(id=self.new_id(), event_type=kind, actor_initials=actor,
+                   inventory_item_id=subject.get("id") if is_item else None,
+                   inventory_code=subject.get("inventory_code"), bin_id=bin_id,
+                   bin_code=bin_code, cart_code=cart_code, vehicle_code=vehicle,
+                   quantity_delta=delta, quantity_before=before.get("quantity") if before else None,
+                   quantity_after=after.get("quantity") if after else None, from_state=copy.deepcopy(before),
+                   to_state=copy.deepcopy(after), request_id=request_id, created_at="2026-11-14T12:00:00Z", source="portal")
+        self.events.append(row)
+        return row
+
+    def classify(self, before, after):
+        if before is None:
+            return "add_stock"
+        if before.get("quantity") != after.get("quantity"):
+            return "quantity_corrected"
+        if before.get("stock_category") != after.get("stock_category"):
+            return "stock_category_changed"
+        if any(before.get(key) != after.get(key) for key in ["inventory_bin_id", "cart_code", "platform"]):
+            return "bin_assigned"
+        if before.get("verification_status") != after.get("verification_status") or before.get("status") != after.get("status"):
+            return "verification_changed"
+        if before.get("reorder_flag") != after.get("reorder_flag"):
+            return "reorder_flag_changed"
+        return "metadata_changed"
+
+    def actor(self, request, data):
+        actor = request.headers.get("x-otr-initials", "").strip().upper()
+        if not actor or len(actor) > 8:
+            raise FixtureError("Initials are required")
+        if request.headers.get("x-otr-initials") != actor:
+            raise FixtureError("Initials must be normalized before sending")
+        if data.get("p_actor_initials") is not None and data["p_actor_initials"] != actor:
+            raise FixtureError("RPC initials must match request initials")
+        return actor
+
+    def use(self, data, actor):
+        item = self.find_item(data.get("p_item_id"))
+        quantity = data.get("p_quantity")
+        vehicle = data.get("p_vehicle_code")
+        request_id = data.get("p_request_id")
+        if not any(row["vehicle_code"] == vehicle for row in REGISTRY):
+            raise FixtureError("Choose an exact vehicle")
+        if not isinstance(quantity, int) or isinstance(quantity, bool) or quantity < 1:
+            raise FixtureError("Quantity must be a positive whole number")
+        if not request_id:
+            raise FixtureError("Request identity is required")
+        identity = (item["id"], vehicle, quantity, actor)
+        if request_id in self.use_requests:
+            previous, response = self.use_requests[request_id]
+            if previous != identity:
+                raise FixtureError("Request identity was reused with different inputs")
+            return dict(response, replayed=True)
+        if item["quantity"] is not None and quantity > item["quantity"]:
+            raise FixtureError("Insufficient inventory")
+        before = copy.deepcopy(item)
+        if item["quantity"] is not None:
+            item["quantity"] -= quantity
+            if item["quantity"] == 0:
+                item["status"] = "Out of Stock"
+        item["updated_at"] = "2026-11-14T12:00:00Z"
+        event = self.event("use_part", actor, before, item, vehicle, -quantity, request_id)
+        response = dict(event_id=event["id"], item_id=item["id"], quantity_before=before["quantity"],
+                        quantity_after=item["quantity"], quantity_used=quantity, vehicle_code=vehicle,
+                        actor_initials=actor, replayed=False)
+        self.use_requests[request_id] = (identity, response)
+        return response
+
+    def move(self, data, actor):
+        item = self.find_item(data.get("p_item_id"))
+        quantity = data.get("p_quantity")
+        category = data.get("p_stock_category")
+        chassis = data.get("p_chassis")
+        cart = data.get("p_cart_code")
+        target_bin = next((row for row in self.bins if row["id"] == data.get("p_bin_id")), None)
+        if category not in ["Mobile", "Backstock"]:
+            raise FixtureError("Choose an inventory type")
+        if category == "Mobile" and not chassis:
+            raise FixtureError("Choose a chassis")
+        if item["quantity"] is None:
+            raise FixtureError("Count this item before moving it")
+        if not isinstance(quantity, int) or quantity < 1 or quantity > item["quantity"]:
+            raise FixtureError("Invalid move quantity")
+        if cart and not any(row["cart_code"] == cart and row["platform"] == chassis for row in CARTS):
+            raise FixtureError("Cart must match chassis")
+        if target_bin and chassis and target_bin["model"] != chassis:
+            raise FixtureError("Bin must match chassis")
+        loose = bool(target_bin and target_bin["bin_code"].endswith("-000"))
+        if category == "Backstock" and (cart or (target_bin and target_bin.get("cart_location"))):
+            raise FixtureError("Backstock cannot be placed on a mobile cart")
+        if target_bin and not loose:
+            prefix = "986" if target_bin["model"] == "986 Boxster" else target_bin["model"]
+            inherited = f"{prefix}-{target_bin['cart_location']}" if target_bin.get("cart_location") else None
+            if cart and cart != inherited:
+                raise FixtureError("Bin and cart conflict")
+            cart = None
+        before = copy.deepcopy(item)
+        split = quantity < item["quantity"]
+        if split:
+            item["quantity"] -= quantity
+            self.event("move_inventory", actor, before, item, delta=-quantity, request_id=data.get("p_request_id"))
+            moved = copy.deepcopy(before)
+            moved.update(id=self.new_id(), inventory_code=before["inventory_code"] + "-SPLIT", quantity=quantity, tag_id=None)
+            self.items.append(moved)
+            moved_before = None
+        else:
+            moved = item
+            moved_before = before
+        moved.update(stock_category=category, platform=chassis or before["platform"], inventory_bin_id=target_bin["id"] if target_bin else None,
+                     location=target_bin["bin_code"] if target_bin else ("Backstock" if category == "Backstock" else cart or "Unassigned"),
+                     cart_code=cart if category == "Mobile" else None, reorder_flag=bool(data.get("p_reorder_flag")))
+        self.event("move_inventory", actor, moved_before, moved, delta=quantity if split else 0, request_id=data.get("p_request_id"))
+        return dict(item_id=moved["id"], split=split)
+
+    def release_held_use(self):
+        assert self.held_use_response is not None
+        route, result = self.held_use_response
+        self.held_use_response = None
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(result),
+                      headers={"access-control-allow-origin": "*"})
+
+    def route(self, route):
+        request = route.request
+        parsed = urlsplit(request.url)
+        path = parsed.path.split("/rest/v1/", 1)[-1]
+        query = parse_qs(parsed.query)
+        if request.method == "OPTIONS":
+            route.fulfill(status=204, headers={"access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "GET,POST,PATCH"})
+            return
+        if self.offline_submissions and path == "submissions":
+            route.abort("internetdisconnected")
+            return
+        data = request.post_data_json if request.method in ["POST", "PATCH"] else {}
+        data = data or {}
+        inventory_mutation = request.method != "GET" and (path.startswith("inventory_") or path.startswith("rpc/"))
+        try:
+            actor = None
+            if inventory_mutation:
+                self.attempts.append(dict(path=path, method=request.method, data=copy.deepcopy(data), headers=dict(request.headers)))
+                actor = self.actor(request, data)
+            if path == "vehicles" and request.method == "GET":
+                result = REGISTRY
+            elif path == "inventory_carts" and request.method == "GET":
+                result = CARTS
+            elif path == "inventory_events":
+                if request.method != "GET":
+                    raise FixtureError("Inventory events are append-only")
+                result = list(reversed(self.events))
+            elif path == "inventory_items":
+                if request.method == "GET":
+                    result = sorted(self.items, key=lambda row: row["item_name"])
+                elif request.method == "POST":
+                    item = copy.deepcopy(data)
+                    item["id"] = self.new_id()
+                    self.items.append(item)
+                    self.event("add_stock", actor, None, item, delta=item.get("quantity"))
+                    result = [item]
+                elif request.method == "PATCH":
+                    item_id = query.get("id", [""])[0].removeprefix("eq.")
+                    item = self.find_item(item_id)
+                    before = copy.deepcopy(item)
+                    item.update(copy.deepcopy(data))
+                    old_quantity, new_quantity = before.get("quantity"), item.get("quantity")
+                    delta = new_quantity - old_quantity if old_quantity is not None and new_quantity is not None else None
+                    self.event(self.classify(before, item), actor, before, item, delta=delta)
+                    result = [item]
+                else:
+                    raise FixtureError("Unexpected inventory item method")
+            elif path == "inventory_bins":
+                if request.method == "GET":
+                    result = sorted(self.bins, key=lambda row: row["bin_code"])
+                elif request.method == "POST":
+                    physical_bin = dict(copy.deepcopy(data), id=self.new_id())
+                    self.bins.append(physical_bin)
+                    self.event("bin_created", actor, None, physical_bin)
+                    result = [physical_bin]
+                elif request.method == "PATCH":
+                    bin_id = query.get("id", [""])[0].removeprefix("eq.")
+                    physical_bin = next(row for row in self.bins if row["id"] == bin_id)
+                    before = copy.deepcopy(physical_bin)
+                    physical_bin.update(copy.deepcopy(data))
+                    self.event("bin_moved", actor, before, physical_bin)
+                    result = [physical_bin]
+                else:
+                    raise FixtureError("Unexpected bin method")
+            elif path == "rpc/use_inventory_part" and request.method == "POST":
+                result = self.use(data, actor)
+                if self.lose_next_use_response:
+                    self.lose_next_use_response = False
+                    self.writes.append(self.attempts[-1])
+                    route.abort("connectionreset")
+                    return
+                if self.hold_next_use_response:
+                    self.hold_next_use_response = False
+                    self.held_use_response = (route, result)
+                    self.writes.append(self.attempts[-1])
+                    return
+            elif path == "rpc/move_inventory_part" and request.method == "POST":
+                result = self.move(data, actor)
+            elif path == "submissions":
+                if request.method == "POST":
+                    self.submissions.append(dict(copy.deepcopy(data), id=self.new_id()))
+                result = self.submissions
+            else:
+                self.errors.append(f"Unexpected API route: {request.method} {path}")
+                raise FixtureError("Unexpected API route")
+            if inventory_mutation:
+                self.writes.append(self.attempts[-1])
+            route.fulfill(status=200, content_type="application/json", body=json.dumps(result), headers={"access-control-allow-origin": "*"})
+        except FixtureError as error:
+            route.fulfill(status=400, content_type="application/json", body=json.dumps({"message": str(error)}), headers={"access-control-allow-origin": "*"})
+        except Exception as error:
+            self.errors.append(repr(error))
+            route.fulfill(status=500, content_type="application/json", body=json.dumps({"message": str(error)}))
+
+
+class QuietHandler(SimpleHTTPRequestHandler):
+    def log_message(self, *_args):
+        pass
+
+
+def fields(page):
+    return page.locator("#inventoryDetailWrap .inventory-field").evaluate_all(
+        "(els)=>Object.fromEntries(els.map(e=>[e.querySelector('.k').textContent,e.querySelector('.v').textContent.trim()]))"
+    )
+
+
+def assert_handlers(page):
+    missing = page.evaluate(r"""() => [...document.querySelectorAll('*')].flatMap(e=>[...e.attributes]
+      .filter(a=>/^on/.test(a.name)).flatMap(a=>[...a.value.matchAll(/\b([A-Za-z_$][\w$]*)\s*\(/g)]
+      .map(m=>m[1]))).filter(n=>typeof window[n]!=='function')""")
+    assert not missing, missing
+
+
+def assert_no_request(backend, action):
+    before = len(backend.attempts)
+    action()
+    assert len(backend.attempts) == before, backend.attempts[before:]
+
+
+def open_item(page, code):
+    page.evaluate("(code)=>openInventoryDetail(code)", code)
+    page.wait_for_selector("#inventoryDetail.active")
+
+
+def open_management(page, code):
+    open_item(page, code)
+    page.evaluate("openInventoryItemManagement()")
+    page.wait_for_selector("#inventoryItemManagement.active")
+    assert page.locator("#inventoryActionInitials").is_visible()
+    assert page.input_value("#inventoryActionInitials") == ""
+
+
+def open_use(page, code):
+    open_item(page, code)
+    page.evaluate("openUsePart()")
+    page.wait_for_selector("#inventoryUsePart.active")
+    assert page.input_value("#usePartQty") == "1"
+    assert page.locator("#usePartInitials").is_visible()
+    assert page.input_value("#usePartInitials") == ""
+
+
+def run_checks(page, backend):
     page.goto(base_url)
-    page.wait_for_function('vehicleRegistryReady',timeout=10000)
-    assert page.evaluate('vehicleRegistry.length')==23
-    # Static and generated inline handler names resolve in the actual browser runtime.
-    def handlers():
-        missing=page.evaluate(r'''() => [...document.querySelectorAll('*')].flatMap(e=>[...e.attributes].filter(a=>/^on/.test(a.name)).flatMap(a=>[...a.value.matchAll(/\b([A-Za-z_$][\w$]*)\s*\(/g)].map(m=>m[1]))).filter(n=>typeof window[n]!=='function')''')
-        assert not missing,missing
-    handlers()
-    assert page.evaluate('APP_VERSION')=='1.2.1'
-    page.evaluate('openInventoryAssistant()');page.locator('#inventoryHome [onclick="openMobileInventory()"] ').click()
-    assert page.locator('#inventoryMobile.active').count()==1
-    page.evaluate('browseInventory("F30")');page.wait_for_function('inventoryBackendReady')
-    assert page.locator('#inventoryResults .inventory-card').count()==1
-    assert 'Brake Pads' in page.locator('#inventoryResults').inner_text()
-    assert 'Shop Bolts' not in page.locator('#inventoryResults').inner_text()
-    page.evaluate('browseInventory("ALL","Backstock")')
-    assert page.locator('#inventoryResults .inventory-card').count()==1
-    assert 'Shop Bolts' in page.locator('#inventoryResults').inner_text()
-    assert page.locator('#inventoryResults .inventory-card-bin').inner_text()=='Bin: Unassigned'
-    page.select_option('#inventoryPlatformFilter','F30')
-    page.select_option('#inventoryStockCategoryFilter','ALL')
-    assert page.locator('#inventoryResults .inventory-card').count()==2
-    page.select_option('#inventoryPlatformFilter','E92')
-    assert page.locator('#inventoryResults .inventory-card').count()==0
-    page.evaluate('openInventoryDetail("TEST-01")');before_quantity=item['quantity']
+    page.wait_for_function("vehicleRegistryReady")
+    assert len(REGISTRY) == page.evaluate("vehicleRegistry.length") == 23
+    assert_handlers(page)
+
+    # The primary crew entry is search-first, while administrative tools are one level deeper.
+    page.locator("#homeInventoryButton").click()
+    page.wait_for_selector("#inventoryHome.active")
+    landing = page.locator("#inventoryHome .bigbtn").all_text_contents()
+    assert len(landing) == 2, landing
+    assert "Mobile Inventory Search" in landing[0] and "Inventory Management" in landing[1], landing
+    for hidden_action in ["Backstock", "Search All Inventory", "Add Inventory Item", "Label & Bin Assistant"]:
+        assert not any(text.strip().startswith(hidden_action) for text in landing)
+    page.locator("#inventoryHome .bigbtn").nth(1).click()
+    page.wait_for_selector("#inventoryManagement.active")
+    management_text = page.locator("#inventoryManagement").inner_text()
+    assert all(label in management_text for label in ["Backstock", "Search All", "Add", "Bin", "Move"]), management_text
+    page.evaluate("openInventoryAssistant()")
+    page.locator("#crewMobileSearchButton").click()
+    page.wait_for_selector("#inventoryBrowse.active")
+    page.wait_for_function("inventoryBackendReady && inventoryBinsReady && inventoryCartsReady")
+    assert page.input_value("#inventoryStockCategoryFilter") == "Mobile"
+    assert "Shop hose stock" not in page.locator("#inventoryResults").inner_text()
+    assert page.locator("#inventorySearch").is_visible()
+    page.fill("#inventorySearch", "F30-B loose")
+    cart_search = page.locator("#inventoryResults").inner_text()
+    assert "Loose rotor B" in cart_search and "Loose rotor A" not in cart_search, cart_search
+    page.fill("#inventorySearch", "E92-A sensor")
+    assert "Coolant temperature sensor" in page.locator("#inventoryResults").inner_text()
+    page.fill("#inventorySearch", "E92-008")
+    assert "Coolant temperature sensor" in page.locator("#inventoryResults").inner_text()
+    page.fill("#inventorySearch", "Coolant temperature sensor")
+    card = page.locator("#inventoryResults .inventory-card")
+    assert card.count() == 1
+    physical_lines = card.locator(":scope > .meta").all_text_contents()
+    assert any("E92-A" in line and "E92-008" in line and "•" in line for line in physical_lines), physical_lines
+    card.click()
+    page.wait_for_selector("#inventoryDetail.active")
+    detail_fields = fields(page)
+    path_keys = [key for key in detail_fields if key.strip().upper() == "LOCATION / BIN"]
+    assert len(path_keys) == 1 and "E92-A" in detail_fields[path_keys[0]] and "E92-008" in detail_fields[path_keys[0]], detail_fields
+    assert not any(key.strip().lower() in ["location", "bin"] for key in detail_fields)
+    assert "Use Part" in page.locator("#inventoryDetail .actions").inner_text()
+    assert "Verify / Correct" not in page.locator("#inventoryDetail .actions").inner_text()
+    assert_handlers(page)
+
+    # Use Part: exact vehicle registry, mandatory initials, quantity one by default.
+    original = copy.deepcopy(backend.item("E92-KNOWN"))
+    page.evaluate("openUsePart()")
+    page.wait_for_selector("#inventoryUsePart.active")
+    assert page.input_value("#usePartQty") == "1"
+    options = page.locator("#usePartVehicle option").evaluate_all("els=>els.map(e=>e.value).filter(Boolean)")
+    assert "E92-CHERRY" in options and "F30-GOLDIE" not in options, options
+    assert set(options).issubset({row["vehicle_code"] for row in REGISTRY})
+    page.check("#showAllUseVehicles")
+    all_options = page.locator("#usePartVehicle option").evaluate_all("els=>els.map(e=>e.value).filter(Boolean)")
+    assert set(all_options) == {row["vehicle_code"] for row in REGISTRY}, all_options
+    page.uncheck("#showAllUseVehicles")
+    assert_no_request(backend, lambda: page.evaluate("finishUsePart()"))
+    page.select_option("#usePartVehicle", "E92-CHERRY")
+    page.fill("#usePartInitials", "   ")
+    assert_no_request(backend, lambda: page.evaluate("finishUsePart()"))
+    page.fill("#usePartInitials", " jd ")
+    page.fill("#usePartQty", "1.5")
+    assert_no_request(backend, lambda: page.evaluate("finishUsePart()"))
+    page.fill("#usePartQty", "99")
+    assert_no_request(backend, lambda: page.evaluate("finishUsePart()"))
+    page.fill("#usePartQty", "1")
+    before_use_requests = len([request for request in backend.attempts if request["path"] == "rpc/use_inventory_part"])
+    page.evaluate("Promise.all([finishUsePart(),finishUsePart()])")
+    page.wait_for_selector("#inventoryUseSuccess.active")
+    assert len([request for request in backend.attempts if request["path"] == "rpc/use_inventory_part"]) == before_use_requests + 1
+    used = backend.item("E92-KNOWN")
+    assert used["quantity"] == 2 and backend.events[-1]["event_type"] == "use_part"
+    assert backend.events[-1]["actor_initials"] == "JD" and backend.events[-1]["vehicle_code"] == "E92-CHERRY"
+    assert "2" in page.locator("#usePartConfirmation").inner_text()
+    for key, value in original.items():
+        if key not in ["quantity", "status", "updated_at"]:
+            assert used[key] == value, key
+
+    page.locator("#useAnotherPartButton").click()
+    page.wait_for_selector("#inventoryBrowse.active")
+    assert page.input_value("#inventoryStockCategoryFilter") == "Mobile"
+
+    # Deplete known stock, while uncounted stock remains NULL and keeps its placement.
+    open_use(page, "E92-KNOWN")
+    page.select_option("#usePartVehicle", "E92-CHERRY")
+    page.fill("#usePartQty", "2")
+    page.fill("#usePartInitials", "jd")
+    page.evaluate("finishUsePart()")
+    assert backend.item("E92-KNOWN")["quantity"] == 0 and backend.item("E92-KNOWN")["status"] == "Out of Stock"
+    zero_events = len(backend.events)
+    open_item(page, "E92-KNOWN")
+    page.evaluate("openUsePart()")
+    if page.locator("#inventoryUsePart.active").count():
+        page.select_option("#usePartVehicle", "E92-CHERRY")
+        page.fill("#usePartInitials", "jd")
+        page.evaluate("finishUsePart()")
+    assert backend.item("E92-KNOWN")["quantity"] == 0 and len(backend.events) == zero_events
+
+    unknown_before = copy.deepcopy(backend.item("E92-UNKNOWN"))
+    open_use(page, "E92-UNKNOWN")
+    page.select_option("#usePartVehicle", "E92-CHERRY")
+    page.fill("#usePartInitials", "ab")
+    page.evaluate("finishUsePart()")
+    assert backend.item("E92-UNKNOWN")["quantity"] is None
+    assert "uncounted" in page.locator("#usePartConfirmation").inner_text().lower()
+    assert backend.events[-1]["quantity_before"] is None and backend.events[-1]["quantity_after"] is None
+    for key in ["inventory_bin_id", "cart_code", "platform", "stock_category", "assignment_type", "source_metadata"]:
+        assert backend.item("E92-UNKNOWN")[key] == unknown_before[key], key
+    page.evaluate('openAssignPartToBin("","E92-UNKNOWN")')
+    page.fill("#assignPartQty", "1")
+    page.fill("#assignPartInitials", "un")
+    assert_no_request(backend, lambda: page.evaluate("assignSelectedPartToBin()"))
+    assert backend.item("E92-UNKNOWN")["quantity"] is None
+
+    # F22 uses the existing M235 registry identities rather than inventing F22 cars.
+    open_use(page, "F22-SENSOR")
+    f22_options = page.locator("#usePartVehicle option").evaluate_all("els=>els.map(e=>e.value).filter(Boolean)")
+    assert "M235-RAPTOR" in f22_options and "M235-TRIXIE" in f22_options
+    assert "E92-CHERRY" not in f22_options
+
+    # Completing a pending use must not overwrite a different item opened meanwhile.
+    page.select_option("#usePartVehicle", "M235-RAPTOR")
+    page.fill("#usePartInitials", "nav")
+    other_item_before = copy.deepcopy(backend.item("E92-FLAGS"))
+    backend.hold_next_use_response = True
+    with page.expect_request("**/rpc/use_inventory_part"):
+        page.evaluate("() => { window.pendingUseNavigation = finishUsePart(); }")
+    open_item(page, "E92-FLAGS")
+    assert backend.held_use_response is not None
+    assert page.evaluate("currentInventoryItem.inventory_code") == "E92-FLAGS"
+    backend.release_held_use()
+    page.evaluate("window.pendingUseNavigation")
+    assert page.locator("#inventoryDetail.active").count() == 1
+    assert page.evaluate("currentInventoryItem.inventory_code") == "E92-FLAGS"
+    assert backend.item("E92-FLAGS") == other_item_before
+    assert backend.item("F22-SENSOR")["quantity"] == 1
+    assert backend.events[-1]["inventory_code"] == "F22-SENSOR" and backend.events[-1]["actor_initials"] == "NAV"
+
+    # Simulate an applied operation whose response is lost. Retry must use the same identity.
+    open_use(page, "F30-RETRY")
+    page.select_option("#usePartVehicle", "F30-GOLDIE")
+    page.fill("#usePartInitials", "rt")
+    backend.lose_next_use_response = True
+    page.evaluate("finishUsePart()")
+    assert backend.item("F30-RETRY")["quantity"] == 3
+    first_attempt = copy.deepcopy(backend.attempts[-1]["data"])
+    event_count = len(backend.events)
+    page.evaluate("finishUsePart()")
+    assert backend.item("F30-RETRY")["quantity"] == 3 and len(backend.events) == event_count
+    assert backend.attempts[-1]["data"]["p_request_id"] == first_attempt["p_request_id"]
+    page.wait_for_selector("#inventoryUseSuccess.active")
+
+    # Management flags and stock-category changes require a fresh visible initials box.
+    open_item(page, "E92-FLAGS")
+    subbin_path = next(value for key, value in fields(page).items() if key.strip().upper() == "LOCATION / BIN")
+    assert "E92-A" in subbin_path and "E92-018-A" in subbin_path and "E92-008" not in subbin_path, subbin_path
+    open_management(page, "E92-FLAGS")
+    assert_no_request(backend, lambda: page.evaluate("markInventoryNeedsReview()"))
+    page.fill("#inventoryActionInitials", "rv")
+    page.evaluate("markInventoryNeedsReview()")
+    assert backend.item("E92-FLAGS")["verification_status"] == "Needs Review"
+    assert backend.events[-1]["event_type"] == "verification_changed"
+    open_management(page, "E92-FLAGS")
+    assert_no_request(backend, lambda: page.evaluate("markInventoryNotFound()"))
+    page.fill("#inventoryActionInitials", "nf")
+    page.evaluate("markInventoryNotFound()")
+    assert backend.item("E92-FLAGS")["status"] == "Missing"
+    quantity_before = backend.item("E92-FLAGS")["quantity"]
+    open_management(page, "E92-FLAGS")
+    assert_no_request(backend, lambda: page.evaluate('changeInventoryStockCategory("Backstock")'))
+    page.fill("#inventoryActionInitials", "bs")
     page.evaluate('changeInventoryStockCategory("Backstock")')
-    assert item['stock_category']=='Backstock' and item['quantity']==before_quantity and item['category']=='Brakes'
-    assert set(writes[-1][1])=={'stock_category','updated_at'}
-    page.evaluate('browseInventory("F30")');assert page.locator('#inventoryResults .inventory-card').count()==0
-    page.evaluate('openInventoryDetail("TEST-01")');page.evaluate('changeInventoryStockCategory("Mobile")')
-    page.evaluate('browseInventory("ALL","Backstock")');page.evaluate('openAddInventory()')
-    assert page.input_value('#addStockCategory')=='Backstock'
-    page.fill('#addItemName','Shop spare');page.fill('#addQty','2');page.fill('#addCategory','Cooling');page.select_option('#addPlatform','E92')
-    page.evaluate('addInventoryItem()')
-    assert created_items[-1]['stock_category']=='Backstock' and created_items[-1]['category']=='Cooling' and created_items[-1]['quantity']==2
-    handlers()
-    page.evaluate('openLabelAssistant()'); page.wait_for_function('inventoryBinsReady')
-    page.evaluate('openCreateBin()')
-    page.select_option('#binMake','BMW');page.select_option('#binModel','F30');page.select_option('#binSystem','Brakes');page.select_option('#binSubsystem','Pads')
-    assert page.locator('#binCodePreview').inner_text()=='B-F30-BRK-PAD-01'
-    page.fill('#binLocation','Shelf A');page.select_option('#binCartLocation','A')
-    page.evaluate('createInventoryBin()')
-    page.wait_for_selector('#binDetail.active');assert page.locator('#binDetail').evaluate('(e)=>e.classList.contains("active")')
-    handlers()
-    assert bins[0]['cart_location']=='A'
-    page.select_option('#binCartLocationSelect','B');before_quantity=item['quantity'];page.evaluate('saveBinCartLocation()')
-    assert bins[0]['cart_location']=='B' and item['quantity']==before_quantity
-    assert writes[-1][0]=='inventory_bins' and set(writes[-1][1])=={'cart_location'}
-    bins.append(dict(bins[0],id='66666666-6666-4666-8666-666666666666',bin_code='E92-CART-TEST',model='E92',cart_location='A'))
-    page.evaluate('openBinBrowser("F30","A")');assert page.locator('#binResults .inventory-card').count()==0
-    page.select_option('#binCartFilter','B');assert page.locator('#binResults .inventory-card').count()==1
-    page.select_option('#binChassisFilter','E92');assert page.locator('#binResults .inventory-card').count()==0
-    page.select_option('#binCartFilter','A');assert page.locator('#binResults .inventory-card').count()==1
-    page.evaluate('openBinDetail("B-F30-BRK-PAD-01")')
-    page.evaluate('openBinLabel()')
-    page.pdf(path=str(output/'bin-label.pdf'),prefer_css_page_size=True)
-    page.evaluate('openAssignPartToBin("B-F30-BRK-PAD-01","TEST-01")')
-    handlers()
-    page.fill('#assignPartQty','1.5'); before=len(writes);page.evaluate('assignSelectedPartToBin()');assert len(writes)==before
-    page.fill('#assignPartQty','10'); page.evaluate('Promise.all([assignSelectedPartToBin(),assignSelectedPartToBin()])')
-    assert len([w for w in writes if w[0].startswith('rpc/')])==1
-    page.evaluate('browseInventory("F30")');page.evaluate('loadInventory()')
-    page.select_option('#inventoryCartSelect','F30-B');assert page.locator('#inventoryResults .inventory-card').count()==1
-    page.select_option('#inventoryCartSelect','F30-A');assert page.locator('#inventoryResults .inventory-card').count()==0
-    page.select_option('#inventoryCartSelect','ALL')
-    page.evaluate('openInventoryDetail("TEST-01")');handlers()
-    fields=page.locator('#inventoryDetailWrap .inventory-field').evaluate_all('(els)=>Object.fromEntries(els.map(e=>[e.querySelector(".k").textContent,e.querySelector(".v").textContent]))')
-    assert fields['Location']=='F30-B' and fields['Bin']=='B-F30-BRK-PAD-01' and fields['Assignment']=='Mobile Inventory',fields
-    assert fields['Category']=='Brakes'
-    page.evaluate('openPartTag("TEST-01")')
-    page.check('#partTagAdjustCount');page.fill('#partTagNewQty','1.5');before=len(writes);page.evaluate('preparePartTag()');assert len(writes)==before
-    page.fill('#partTagNewQty','0');page.evaluate('preparePartTag()');assert item['quantity']==0 and item['tag_id']
-    assert page.locator('.part-tag-face').count()==4 and page.locator('.part-tag-face.rotate').count()==2
-    dimensions=page.locator('#labelPrintCanvas').bounding_box();assert dimensions['width']==384 and dimensions['height']==576
-    tag=item['tag_id'];page.evaluate('preparePartTag()');assert item['tag_id']==tag
-    page.pdf(path=str(output/'part-tag.pdf'),prefer_css_page_size=True)
-    page.screenshot(path=str(output/'label-preview.png'),full_page=True)
-    # Every chassis has A/B carts, and one loose Bin ID can hold parts on both carts.
-    assert page.evaluate('inventoryCarts.length')==8
-    for index,(platform,code) in enumerate([('E92','E92'),('F22','F22'),('F30','F30'),('986 Boxster','986')]):
-        bins.append(dict(id=f'77777777-7777-4777-8777-{index:012d}',bin_code=code+'-000',model=platform,make='BMW',system='Loose items',cart_location=None))
-    page.evaluate('loadInventoryBins()')
-    for cart in ['F30-A','F30-B']:
-        page.evaluate('openAddInventory()');page.select_option('#addPlatform','F30');page.fill('#addItemName','Loose rotor '+cart);page.fill('#addQty','1')
-        page.select_option('#addLocation',cart)
-        loose=next(row for row in bins if row['bin_code']=='F30-000')
-        page.select_option('#addBinId',loose['id']);page.evaluate('addInventoryItem()')
-        assert created_items[-1]['cart_code']==cart and created_items[-1]['inventory_bin_id']==loose['id'] and created_items[-1]['stock_category']=='Mobile'
-    assert created_items[-1]['inventory_bin_id']==created_items[-2]['inventory_bin_id']
-    assert {row['cart_code'] for row in created_items[-2:]}=={'F30-A','F30-B'}
-    # Backstock location and assignment stay synchronized.
-    page.evaluate('openAddInventory()');page.select_option('#addLocation','Backstock')
-    assert page.input_value('#addStockCategory')=='Backstock'
-    page.select_option('#addStockCategory','Mobile');assert page.input_value('#addLocation')=='Unassigned'
-    # Workbook unknowns and units survive detail, verification, moves and tag printing.
-    source=json.loads((root/'data/inventory/f22-e92-2026-11-08.json').read_text())
-    unknown=next(row for row in source['parts'] if row['quantity'] is None)
-    item.clear();item.update(unknown,id='11111111-1111-4111-8111-111111111111',location=unknown['bin_code'],source_metadata=unknown.copy())
-    page.evaluate('loadInventory()');key=item['inventory_code']
-    page.evaluate('(key)=>openInventoryDetail(key)',key)
-    assert 'Uncounted' in page.locator('#inventoryDetailWrap').inner_text()
-    page.evaluate('openInventoryVerify()');assert page.input_value('#invQty')==''
-    page.evaluate('saveInventoryVerification()');assert item['quantity'] is None
-    page.evaluate('(key)=>openPartTag(key)',key);page.evaluate('preparePartTag()')
-    assert 'Uncounted' in page.locator('#labelPrintCanvas').inner_text()
-    page.evaluate('(key)=>openAssignPartToBin("B-F30-BRK-PAD-01",key)',key)
-    page.fill('#assignPartQty','1');before=len(writes);page.evaluate('assignSelectedPartToBin()');assert len(writes)==before
-    various=next(row for row in source['parts'] if row['quantity_raw']=='VARIOUS')
-    item.clear();item.update(various,id='11111111-1111-4111-8111-111111111111',location=various['bin_code'],source_metadata=various.copy())
-    page.evaluate('loadInventory()');page.evaluate('(key)=>openInventoryDetail(key)',item['inventory_code'])
-    assert 'VARIOUS (uncounted)' in page.locator('#inventoryDetailWrap').inner_text()
-    counted_set=next(row for row in source['parts'] if row['quantity_unit']=='sets' and row['quantity']>1)
-    item.clear();item.update(counted_set,id='11111111-1111-4111-8111-111111111111',location=counted_set['bin_code'],source_metadata=counted_set.copy(),condition='Mixed')
-    page.evaluate('loadInventory()');page.evaluate('(key)=>openInventoryDetail(key)',item['inventory_code'])
-    assert f"{item['quantity']} sets" in page.locator('#inventoryDetailWrap').inner_text()
-    page.evaluate('openInventoryVerify()');assert page.input_value('#invCondition')=='Mixed'
-    page.evaluate('saveInventoryVerification()');assert item['condition']=='Mixed' and item['quantity_unit']=='sets'
-    # Parent and sub-bin navigation does not claim untagged bins have zero stock.
-    child=dict(bins[0],id='33333333-3333-4333-8333-333333333333',bin_code='TEST-SUB',parent_bin_id=bins[0]['id'])
-    bins.append(child);page.evaluate('loadInventoryBins()');page.evaluate('openBinDetail("B-F30-BRK-PAD-01")')
-    assert 'Sub-bins' in page.locator('#binDetailWrap').inner_text()
-    assert 'does not establish a physical count of zero' in page.locator('#binDetailWrap').inner_text()
-    handlers()
-    # All existing screens retain functioning home navigation.
-    screens=page.locator('.screen').evaluate_all('(els)=>els.map(e=>e.id)')
-    for screen in screens:
-        page.evaluate('(id)=>showScreen(id)',screen)
-        page.evaluate('resetAndHome()')
-        page.wait_for_function('document.getElementById("home").classList.contains("active")')
-    # Existing feedback, reports, operational forms and local queue keep working.
+    assert backend.item("E92-FLAGS")["stock_category"] == "Backstock" and backend.item("E92-FLAGS")["quantity"] == quantity_before
+    open_management(page, "E92-FLAGS")
+    page.fill("#inventoryActionInitials", "mb")
+    page.evaluate('changeInventoryStockCategory("Mobile")')
+
+    # A physical correction is a different event from consumption, including NULL -> counted.
+    open_item(page, "E92-FLAGS")
+    page.evaluate("openInventoryVerify()")
+    page.fill("#invQty", "5")
+    assert_no_request(backend, lambda: page.evaluate("saveInventoryVerification()"))
+    page.fill("#invInitials", "ct")
+    page.fill("#invQty", "-1")
+    assert_no_request(backend, lambda: page.evaluate("saveInventoryVerification()"))
+    page.fill("#invQty", "5")
+    page.evaluate("saveInventoryVerification()")
+    assert backend.item("E92-FLAGS")["quantity"] == 5
+    assert backend.events[-1]["event_type"] == "quantity_corrected" and backend.events[-1]["quantity_delta"] == -1
+    open_item(page, "E92-UNKNOWN")
+    page.evaluate("openInventoryVerify()")
+    assert page.input_value("#invQty") == ""
+    page.fill("#invInitials", "pc")
+    page.evaluate("saveInventoryVerification()")
+    assert backend.item("E92-UNKNOWN")["quantity"] is None
+    open_item(page, "E92-UNKNOWN")
+    page.evaluate("openInventoryVerify()")
+    page.fill("#invQty", "4")
+    page.fill("#invInitials", "pc")
+    page.evaluate("saveInventoryVerification()")
+    assert backend.events[-1]["quantity_before"] is None and backend.events[-1]["quantity_after"] == 4
+
+    # Add Backstock through the management capability, with explicit initials.
+    page.evaluate('browseInventory("ALL","Backstock")')
+    assert "Shop hose stock" in page.locator("#inventoryResults").inner_text()
+    page.evaluate("openAddInventory()")
+    page.fill("#addItemName", "New shop hose")
+    page.fill("#addQty", "2")
+    page.fill("#addCategory", "Cooling")
+    page.select_option("#addPlatform", "E92")
+    page.select_option("#addLocation", "Backstock")
+    assert_no_request(backend, lambda: page.evaluate("addInventoryItem()"))
+    page.fill("#addInitials", "ns")
+    page.evaluate("addInventoryItem()")
+    added = next(item for item in backend.items if item["item_name"] == "New shop hose")
+    assert added["stock_category"] == "Backstock" and added["quantity"] == 2
+    assert backend.events[-1]["event_type"] == "add_stock" and backend.events[-1]["actor_initials"] == "NS"
+
+    # Every bin creation and cart movement has its own initials field and audit event.
+    page.evaluate("openLabelAssistant()")
+    page.evaluate("openCreateBin()")
+    page.select_option("#binMake", "BMW")
+    page.select_option("#binModel", "E92")
+    page.select_option("#binSystem", "Cooling")
+    page.select_option("#binSubsystem", "Hoses / plumbing")
+    page.select_option("#binCartLocation", "A")
+    assert_no_request(backend, lambda: page.evaluate("createInventoryBin()"))
+    page.fill("#binCreateInitials", "bc")
+    page.evaluate("createInventoryBin()")
+    created_bin = next(row for row in backend.bins if row["bin_code"].startswith("B-E92-COOL-HOSE"))
+    assert backend.events[-1]["event_type"] == "bin_created"
+    page.locator("#binManagementControls summary").click()
+    page.select_option("#binCartLocationSelect", "B")
+    assert_no_request(backend, lambda: page.evaluate("saveBinCartLocation()"))
+    page.fill("#binCartInitials", "cm")
+    page.evaluate("saveBinCartLocation()")
+    assert created_bin["cart_location"] == "B" and backend.events[-1]["event_type"] == "bin_moved"
+
+    # Fast Move follows inventory type -> chassis -> cart -> matching bin, preserving units.
+    before_move_quantity = sum(item["quantity"] or 0 for item in backend.items)
+    source_before = copy.deepcopy(backend.item("E92-FLAGS"))
+    page.evaluate('openAssignPartToBin("","E92-FLAGS")')
+    assert page.locator("#assignChassis").is_visible()
+    page.select_option("#assignInventoryType", "Mobile")
+    page.select_option("#assignChassis", "F30")
+    page.select_option("#assignPartCart", "F30-B")
+    options = page.locator("#assignBinSelect option").evaluate_all("els=>els.map(e=>e.value)")
+    assert uid(240) in options and uid(242) in options and uid(241) not in options, options
+    page.select_option("#assignBinSelect", uid(240))
+    page.fill("#assignPartQty", "1")
+    page.check("#assignPartReorder")
+    assert_no_request(backend, lambda: page.evaluate("assignSelectedPartToBin()"))
+    page.fill("#assignPartInitials", "mv")
+    page.select_option("#assignChassis", "")
+    assert_no_request(backend, lambda: page.evaluate("assignSelectedPartToBin()"))
+    page.select_option("#assignChassis", "F30")
+    page.select_option("#assignPartCart", "F30-B")
+    page.select_option("#assignBinSelect", uid(240))
+    page.evaluate("assignSelectedPartToBin()")
+    moved = next(item for item in backend.items if item["inventory_code"] == "E92-FLAGS-SPLIT")
+    assert moved["platform"] == "F30" and moved["inventory_bin_id"] == uid(240) and moved["cart_code"] == "F30-B"
+    assert moved["stock_category"] == "Mobile" and moved["quantity_unit"] == "sets" and moved["reorder_flag"] is True
+    assert moved["source_metadata"] == source_before["source_metadata"] and moved["tag_id"] is None
+    assert sum(item["quantity"] or 0 for item in backend.items) == before_move_quantity
+    assert backend.item("E92-FLAGS")["inventory_bin_id"] == source_before["inventory_bin_id"]
+    assert [event["event_type"] for event in backend.events[-2:]] == ["move_inventory", "move_inventory"]
+
+    # Count/tag allocation still works, but label printing is not a primary crew task.
+    page.evaluate("(code)=>openPartTag(code)", added["inventory_code"])
+    assert_no_request(backend, lambda: page.evaluate("preparePartTag()"))
+    page.fill("#partTagInitials", "pt")
+    page.evaluate("preparePartTag()")
+    assert added["tag_id"] and added["quantity"] == 2
+    assert page.locator(".part-tag-face").count() == 4
+    dimensions = page.locator("#labelPrintCanvas").bounding_box()
+    assert dimensions["width"] == 384 and dimensions["height"] == 576
+    tag = added["tag_id"]
+    before_tag_events = len(backend.events)
+    page.evaluate("preparePartTag()")
+    assert added["tag_id"] == tag and len(backend.events) == before_tag_events
+    page.evaluate("(code)=>openPartTag(code)", added["inventory_code"])
+    page.check("#partTagAdjustCount")
+    page.fill("#partTagNewQty", "3")
+    assert_no_request(backend, lambda: page.evaluate("preparePartTag()"))
+    page.fill("#partTagInitials", "qc")
+    page.evaluate("preparePartTag()")
+    assert added["quantity"] == 3 and added["tag_id"] == tag
+    assert backend.events[-1]["event_type"] == "quantity_corrected" and backend.events[-1]["actor_initials"] == "QC"
+
+    # Registered bins, loose containers on both carts, and UUID-only contents remain intact.
+    page.evaluate('browseInventory("F30")')
+    page.select_option("#inventoryCartSelect", "F30-B")
+    page.evaluate("openChassisBins()")
+    assert page.input_value("#binChassisFilter") == "F30" and page.input_value("#binCartFilter") == "ALL"
+    assert "F30-000" in page.locator("#binResults").inner_text()
+    page.evaluate('openBinDetail("F30-000")')
+    assert "Loose rotor A" in page.locator("#binContents").inner_text() and "Loose rotor B" in page.locator("#binContents").inner_text()
+    page.evaluate('openBinDetail("E92-008")')
+    assert "Seal set" not in page.locator("#binContents").inner_text()
+    page.evaluate('openBinDetail("E92-018")')
+    assert "E92-018-A" in page.locator("#binDetailWrap").inner_text() and "E92-018-B" in page.locator("#binDetailWrap").inner_text()
+    assert_handlers(page)
+
+    # Inventory Activity is reachable under management and renders the shared read-only ledger.
+    before_history_writes = len(backend.attempts)
+    page.evaluate('showScreen("inventoryManagement")')
+    page.locator('#inventoryManagement [onclick="openInventoryEventHistory()"] ').click()
+    page.wait_for_selector("#inventoryEventHistory.active")
+    page.wait_for_function("document.getElementById('inventoryEventList').textContent.includes('use part')")
+    history = page.locator("#inventoryEventList").inner_text()
+    assert page.locator("#inventoryEventList .card").count() == len(backend.events)
+    for context in ["E92-KNOWN", "E92-008", "E92-A", "JD", "Uncounted", "quantity corrected", "move inventory", "bin moved"]:
+        assert context in history, (context, history)
+    assert len(backend.attempts) == before_history_writes
+    assert_handlers(page)
+
+    # All inventory mutation requests carry explicit normalized initials. The UI never writes ledger rows.
+    assert backend.attempts and all(request["headers"].get("x-otr-initials", "").strip() for request in backend.attempts)
+    assert not any(request["path"] == "inventory_events" for request in backend.attempts)
+    assert all(event["actor_initials"] and event["actor_initials"] == event["actor_initials"].upper() for event in backend.events)
+    assert all(event["from_state"] is not None or event["event_type"] in ["add_stock", "bin_created", "move_inventory"] for event in backend.events)
+
+    # Feedback, reports, operational forms and device-local queue are unchanged.
     page.evaluate('activeCategory="Mechanical / Cars";document.getElementById("quickText").value="Smoke test";submitQuick()')
-    assert writes[-1][1]['submission_type']=='feedback_quick'
+    assert backend.submissions[-1]["submission_type"] == "feedback_quick"
     page.evaluate('answers={test:"Detailed smoke test"};submitDetailed()')
-    assert writes[-1][1]['submission_type']=='feedback_detailed'
+    assert backend.submissions[-1]["submission_type"] == "feedback_detailed"
     page.evaluate('document.getElementById("peEvent").value="Test event";document.getElementById("peRole").selectedIndex=1;document.getElementById("pe4").value="Worked well";submitPostEvent()')
-    assert writes[-1][1]['submission_type']=='post_event_report'
-    page.evaluate('loadAdminSubmissions()')
-    assert 'Test event' in page.locator('#adminSubmissionsList').inner_text()
-    offline=True
+    assert backend.submissions[-1]["submission_type"] == "post_event_report"
+    page.evaluate("loadAdminSubmissions()")
+    assert "Test event" in page.locator("#adminSubmissionsList").inner_text()
+    backend.offline_submissions = True
     page.evaluate('document.getElementById("quickText").value="Offline smoke test";submitQuick()')
-    assert page.evaluate('getStore().length')==1
-    page.evaluate('showScreen("admin")');assert 'Offline smoke test' in page.locator('#admin').inner_text()
-    offline=False;page.evaluate('syncQueue()');assert page.evaluate('getStore().length')==0
-    for key in page.evaluate('Object.keys(operationalFormDefinitions)'):
-        page.evaluate('(key)=>openOperationalForm(key)',key);handlers()
-    # Home shortcut, visible part Bin IDs, and chassis-scoped bin browsing.
-    for index,(code,name,cart) in enumerate([('F30-010',None,'B'),('F30-002','Cooling & hoses','A'),('F30-001','Engine hardware','A')]):
-        bins.append(dict(bins[0],id=f'88888888-8888-4888-8888-{index:012d}',bin_code=code,description=name,system='Spare rotors' if name is None else name,cart_location=cart))
-    cooling=next(row for row in bins if row['bin_code']=='F30-002')
-    rotors=next(row for row in bins if row['bin_code']=='F30-010')
-    created_items.extend([
-        dict(id='99999999-9999-4999-8999-000000000001',inventory_code='DIRECTORY-COOLING',item_name='Only Cooling Bin',platform='F30',quantity=2,stock_category='Mobile',inventory_bin_id=cooling['id'],location='F30-002'),
-        dict(id='99999999-9999-4999-8999-000000000002',inventory_code='DIRECTORY-OTHER',item_name='Other Bin Part',platform='F30',quantity=3,stock_category='Mobile',inventory_bin_id=rotors['id'],location='F30-002')
-    ])
-    before_reads=len(writes)
-    page.goto(base_url);page.wait_for_function('vehicleRegistryReady')
-    assert page.locator('#home .grid button').first.get_attribute('id')=='homeInventoryButton'
-    page.locator('#homeInventoryButton').click();page.wait_for_selector('#inventoryHome.active')
-    page.locator('#inventoryHome .back').click();page.wait_for_selector('#home.active')
-    page.locator('#homeInventoryButton').click();page.locator('#inventoryHome [onclick="openMobileInventory()"] ').click()
-    page.locator('#inventoryMobile').get_by_role('button',name=re.compile('^F30 3XX')).click()
-    page.wait_for_function('document.getElementById("inventoryResults").textContent.includes("Only Cooling Bin")')
-    assert page.locator('#inventoryResults .inventory-card',has_text='Only Cooling Bin').locator('.inventory-card-bin').inner_text()=='Bin: F30-002'
-    assert page.locator('#inventoryResults .inventory-card',has_text='Other Bin Part').locator('.inventory-card-bin').inner_text()=='Bin: F30-010'
-    page.select_option('#inventoryCartSelect','F30-B')
-    page.locator('#openChassisBinsButton').click()
-    page.wait_for_function('document.getElementById("binChassisFilter").value==="F30" && document.getElementById("binResults").textContent.includes("F30-000")')
-    assert page.input_value('#binCartFilter')=='ALL'
-    codes=page.locator('#binResults .inventory-card > strong').all_text_contents()
-    assert codes[:4]==['F30-000','F30-001','F30-002','F30-010'],codes
-    assert not any(code.startswith('E92-') for code in codes)
-    assert 'Cooling & hoses' in page.locator('#binResults').inner_text()
-    assert 'Spare rotors' in page.locator('#binResults').inner_text()
-    page.screenshot(path=str(output/'chassis-open-bins.png'),full_page=True)
-    handlers()
-    page.locator('#binResults .inventory-card',has_text='F30-002').click();page.wait_for_selector('#binDetail.active')
-    assert page.locator('#binContents .inventory-card').count()==1
-    assert 'Only Cooling Bin' in page.locator('#binContents').inner_text()
-    assert 'Other Bin Part' not in page.locator('#binContents').inner_text()
-    page.locator('#binContents .inventory-card').click();page.wait_for_selector('#inventoryDetail.active')
-    page.locator('#inventoryDetail .back').click();page.wait_for_selector('#binDetail.active')
-    page.locator('#binDetail .back').click();page.wait_for_selector('#binBrowse.active')
-    page.locator('#binResults .inventory-card',has_text='F30-000').click();page.wait_for_selector('#binDetail.active')
-    assert page.locator('#binContents .inventory-card').count()==2
-    assert 'Loose rotor F30-A' in page.locator('#binContents').inner_text() and 'Loose rotor F30-B' in page.locator('#binContents').inner_text()
-    page.locator('#binDetail .back').click();page.wait_for_selector('#binBrowse.active')
-    page.locator('#binBrowse .back').click();page.wait_for_selector('#inventoryBrowse.active')
-    page.locator('#searchChassisPartsButton').click();assert page.locator('#inventorySearch').evaluate('(e)=>document.activeElement===e')
-    page.screenshot(path=str(output/'part-card-bin-ids.png'),full_page=True)
-    assert len(writes)==before_reads
-    handlers()
-    assert not errors,errors
-    print(json.dumps({'result':'PASS','screens_with_home_navigation':len(screens),'vehicle_registry':23,'bin_id':bins[0]['bin_code'],'rpc_requests_after_double_submit':1,'part_faces':4,'rotated_faces':2,'print_canvas_px':[384,576],'invalid_quantities_blocked':True,'home_inventory_shortcut':'PASS','visible_part_bin_ids':'PASS','scoped_numbered_bin_directory':'PASS','exact_bin_contents_and_navigation':'PASS','runtime_errors':errors,'mock_write_count':len(writes),'cart_registry_and_loose_bins':'PASS','chassis_cart_assignment_and_filters':'PASS','mobile_backstock_filters_and_writes':'PASS','unknown_counts_and_units':'PASS','postevent_admin_offline_queue':'PASS','artifacts':str(output)},indent=2))
-    browser.close()
-server.shutdown()
+    assert page.evaluate("getStore().length") == 1
+    page.evaluate('showScreen("admin")')
+    assert "Offline smoke test" in page.locator("#admin").inner_text()
+    backend.offline_submissions = False
+    page.evaluate("syncQueue()")
+    assert page.evaluate("getStore().length") == 0
+    for key in page.evaluate("Object.keys(operationalFormDefinitions)"):
+        page.evaluate("(key)=>openOperationalForm(key)", key)
+        assert_handlers(page)
+
+    # Fresh document avoids rapid synthetic history resets contaminating the real click/back path.
+    page.goto(base_url)
+    page.wait_for_function("vehicleRegistryReady")
+    assert page.locator("#home .grid button").first.get_attribute("id") == "homeInventoryButton"
+    page.locator("#homeInventoryButton").click()
+    page.wait_for_selector("#inventoryHome.active")
+    page.locator("#inventoryHome .back").click()
+    page.wait_for_selector("#home.active")
+    page.locator("#homeInventoryButton").click()
+    page.locator("#crewMobileSearchButton").click()
+    page.wait_for_selector("#inventoryBrowse.active")
+    page.screenshot(path=str(OUTPUT / "crew-mobile-search.png"), full_page=True)
+    assert_handlers(page)
+    screens = page.locator(".screen").evaluate_all("els=>els.map(e=>e.id)")
+    page.evaluate("resetAndHome()")
+    page.wait_for_function("portalHistoryDepth===0 && pendingPortalResetScreen===null")
+    for screen in screens:
+        page.evaluate("id=>showScreen(id,{historyMode:'none'})", screen)
+        if screen != "home":
+            page.locator("#globalHomeButton").click()
+        page.wait_for_selector("#home.active")
+    return dict(result="PASS", screens_with_home_navigation=len(screens), crew_search_first="PASS", combined_location_bin="PASS", exact_vehicle_selection="PASS",
+                known_null_and_zero_use="PASS", explicit_initials_all_paths="PASS", use_retry_idempotency="PASS",
+                pending_use_navigation="PASS", read_only_activity_history="PASS",
+                management_and_fast_move="PASS", ledger_events=len(backend.events), successful_inventory_requests=len(backend.writes),
+                submissions_and_offline_queue="PASS", exact_bin_contents="PASS", existing_4x6_canvas="PASS")
+
+
+backend = Backend()
+server = ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(QuietHandler, directory=str(ROOT)))
+threading.Thread(target=server.serve_forever, daemon=True).start()
+base_url = f"http://127.0.0.1:{server.server_address[1]}"
+runtime_errors = []
+alerts = []
+try:
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=os.environ.get("CHROMIUM_PATH", "/usr/bin/chromium"), headless=True, args=["--no-sandbox"])
+        page = browser.new_page(viewport={"width": 1280, "height": 1000})
+        page.set_default_timeout(15000)
+        page.route("**/rest/v1/**", backend.route)
+        page.on("pageerror", lambda error: runtime_errors.append(str(error)))
+        page.on("dialog", lambda dialog: (alerts.append(dialog.message), dialog.accept()))
+        result = run_checks(page, backend)
+        assert not runtime_errors, runtime_errors
+        assert not backend.errors, backend.errors
+        result.update(runtime_errors=runtime_errors, backend_errors=backend.errors, artifacts=str(OUTPUT))
+        print(json.dumps(result, indent=2))
+        browser.close()
+finally:
+    server.shutdown()
+    server.server_close()

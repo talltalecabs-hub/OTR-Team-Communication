@@ -570,6 +570,10 @@
       box-shadow:none !important;
       background:var(--panel2) !important;
     }
+    .inventory-physical-path{display:flex;align-items:center;flex-wrap:wrap;gap:.3em;margin:8px 0;font-size:16px}
+    .inventory-physical-path .bin-inline-link{display:inline;padding:0;border:0;background:transparent;color:var(--accent-dark);font:inherit;font-weight:800;text-decoration:underline}
+    .inventory-initials{text-transform:uppercase}
+    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
     .coming-soon strong::after{
       content:"  •  COMING SOON";
       font-size:11px;
