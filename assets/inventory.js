@@ -7,6 +7,8 @@ let currentInventoryItem = null;
 let inventoryBackendReady = false;
 let inventoryPatchPending=false;
 let inventoryAddPending=false;
+let inventoryNotesPending=false;
+let inventoryDetailRenderId=0;
 
 // Unknown workbook counts remain unknown; units describe pieces, sets, or lots.
 function inventoryQuantityLabel(item){
@@ -180,13 +182,14 @@ function openInventoryDetail(key,historyMode="push"){
   const item=findInventoryItem(key);
   if(!item) return;
   currentInventoryItem=item;
+  inventoryDetailRenderId+=1;
   const wrap=document.getElementById("inventoryDetailWrap");
   const assignment=item.assignment_type||"General Inventory";
   const direct=assignment==="Specific Vehicle"&&item.assigned_vehicle ? `<span class="inv-badge direct">DIRECT SPARE • ${escapeHtml(item.assigned_vehicle)}</span>`:"";
   const imported=(item.verification_status||"Imported")==="Imported";
   wrap.innerHTML=`
     <h2 class="sectiontitle">${escapeHtml(item.item_name||"Inventory Item")}</h2>
-    <div class="inventory-statusbar">${invBadge(item.verification_status)} <span class="inv-badge direct">${escapeHtml(inventoryStockCategoryLabel(item))}</span> ${direct}</div>
+    <div id="inventoryDetailStatus" class="inventory-statusbar">${invBadge(item.verification_status)} <span class="inv-badge direct">${escapeHtml(inventoryStockCategoryLabel(item))}</span> ${direct}</div>
     <div class="card">
       <div class="inventory-detail-grid">
         <div class="inventory-field"><div class="k">Quantity</div><div class="v">${escapeHtml(inventoryQuantityLabel(item))}</div></div>
@@ -201,13 +204,82 @@ function openInventoryDetail(key,historyMode="push"){
       </div>
       ${imported ? `<div class="seed-note"><strong>Imported record — not independently physically verified.</strong><br>Original: “${escapeHtml(item.original_item_text||item.item_name)}” • ${item.original_quantity===null ? "Uncounted" : escapeHtml(inventoryQuantityLabel({...item,quantity:item.original_quantity??item.quantity}))} • ${escapeHtml(item.original_location||item.location||"Unknown location")}</div>` : ""}
       ${item.source_metadata?.label_text ? `<div class="seed-note"><strong>Physical label:</strong> ${escapeHtml(item.source_metadata.label_text)}<br>Note: ${escapeHtml(item.source_metadata.label_note||"—")}<br>Photo: ${escapeHtml(item.source_metadata.source_photo||"—")} • Label date: ${escapeHtml(item.source_metadata.label_date||"—")}${item.source_metadata.review?`<br>${escapeHtml(item.source_metadata.review)}`:""}</div>` : ""}
-      ${item.notes ? `<p><strong>Notes:</strong> ${escapeHtml(item.notes)}</p>`:""}
       <div class="actions">
         <button class="primary" type="button" onclick="openUsePart()" ${item.quantity===0?"disabled":""}>Use Part</button>
         <button class="secondary" type="button" onclick="openInventoryItemManagement()">Inventory Management</button>
+        <button id="inventoryDetailNotFound" class="danger" type="button" onclick="markInventoryNotFound('inventoryDetailInitials')">Not Found</button>
       </div>
+      <label for="inventoryDetailNotes">Notes</label>
+      <textarea id="inventoryDetailNotes" data-inventory-key="${escapeHtml(String(item.local_key))}" rows="4" placeholder="Part condition, fitment, or crew notes...">${escapeHtml(item.notes||"")}</textarea>
+      <label for="inventoryDetailInitials">Initials</label>
+      <input id="inventoryDetailInitials" class="inventory-initials" type="text" maxlength="8" autocapitalize="characters" autocomplete="off" required placeholder="Required for Notes or Not Found" />
+      <div class="actions"><button id="inventoryDetailSaveNotes" class="secondary" type="button" onclick="saveInventoryNotes()">Save Notes</button></div>
+      <p id="inventoryDetailNoteStatus" class="small" role="status" aria-live="polite"></p>
     </div>`;
   showScreen("inventoryDetail",{historyMode});
+}
+function inventoryDetailDisplayedItem(){
+  const key=document.getElementById("inventoryDetailNotes")?.dataset.inventoryKey;
+  return key?findInventoryItem(key):null;
+}
+function applyInventoryCachedPatch(item,patch){
+  Object.assign(item,patch);
+  const latest=inventoryData.find(row=>row.id===item.id);
+  if(latest && latest!==item) Object.assign(latest,patch);
+  if(currentInventoryItem?.id===item.id && currentInventoryItem!==item && currentInventoryItem!==latest) Object.assign(currentInventoryItem,patch);
+}
+async function saveInventoryNotes(){
+  const screen=document.getElementById("inventoryDetail");
+  if(!screen?.classList.contains("active") || inventoryNotesPending || inventoryPatchPending) return;
+  const item=inventoryDetailDisplayedItem();
+  if(!item) return;
+  const initials=inventoryInitials("inventoryDetailInitials");
+  if(!initials) return;
+  const input=document.getElementById("inventoryDetailNotes");
+  const initialsInput=document.getElementById("inventoryDetailInitials");
+  const save=document.getElementById("inventoryDetailSaveNotes");
+  const notFound=document.getElementById("inventoryDetailNotFound");
+  const status=document.getElementById("inventoryDetailNoteStatus");
+  const renderId=inventoryDetailRenderId;
+  const patch={notes:input.value.trim()||null};
+  if(patch.notes===(item.notes||null)){
+    status.textContent="No note changes to save.";
+    return;
+  }
+  inventoryNotesPending=true;
+  for(const control of [input,initialsInput,save,notFound]) control.disabled=true;
+  save.textContent="Saving Notes...";
+  status.textContent="Saving notes...";
+  try{
+    const saved=await persistInventoryPatch(item,patch,initials);
+    if(!saved){
+      if(renderId===inventoryDetailRenderId) status.textContent="Notes could not be confirmed. Refresh before retrying.";
+      return;
+    }
+    applyInventoryCachedPatch(item,patch);
+    renderInventoryResults();
+    if(renderId===inventoryDetailRenderId && screen.classList.contains("active")){
+      input.value=patch.notes||"";
+      input.defaultValue=input.value;
+      status.textContent="Notes saved.";
+      initialsInput.value="";
+    }else{
+      // A reload/reopen may have replaced this item's form while the write ran.
+      // Refresh an untouched form, while preserving any newer unsaved note.
+      const shown=inventoryDetailDisplayedItem();
+      const freshInput=document.getElementById("inventoryDetailNotes");
+      if(shown?.id===item.id && freshInput && freshInput.value===freshInput.defaultValue){
+        freshInput.value=patch.notes||"";
+        freshInput.defaultValue=freshInput.value;
+      }
+      showPortalNavNotice("Notes saved.");
+    }
+  }finally{
+    inventoryNotesPending=false;
+    // Restore only these captured controls; a newly opened part has its own form.
+    for(const control of [input,initialsInput,save,notFound]) control.disabled=false;
+    save.textContent="Save Notes";
+  }
 }
 function inventoryLocationBinHtml(item,clickable=false){
   const location=escapeHtml(inventoryItemLocationLabel(item));
@@ -335,18 +407,27 @@ async function markInventoryNeedsReview(){
   renderInventoryResults();
   if(currentInventoryItem?.id===item.id && document.getElementById("inventoryItemManagement").classList.contains("active")) openInventoryItemManagement("replace");
 }
-async function markInventoryNotFound(){
-  const item=currentInventoryItem;
-  if(!item)return;
-  const initials=inventoryInitials("inventoryActionInitials");
+async function markInventoryNotFound(fieldId="inventoryActionInitials"){
+  const fromDetail=fieldId==="inventoryDetailInitials";
+  const item=fromDetail?inventoryDetailDisplayedItem():currentInventoryItem;
+  if(!item || inventoryPatchPending) return;
+  const initials=inventoryInitials(fieldId);
   if(!initials) return;
-  if(!confirm("Mark this imported/current record as Not Found? The history is preserved."))return;
+  if(!confirm("Mark this imported/current record as Not Found? The history is preserved.")) return;
+  const renderId=inventoryDetailRenderId;
   const patch={verification_status:"Not Found",status:"Missing"};
   const saved=await persistInventoryPatch(item,patch,initials);
   if(!saved) return;
-  Object.assign(item,patch);
+  applyInventoryCachedPatch(item,patch);
   renderInventoryResults();
-  if(currentInventoryItem?.id===item.id && document.getElementById("inventoryItemManagement").classList.contains("active")) openInventoryItemManagement("replace");
+  if(fromDetail){
+    if(renderId===inventoryDetailRenderId && document.getElementById("inventoryDetail").classList.contains("active")){
+      const badge=document.getElementById("inventoryDetailStatus").firstElementChild;
+      if(badge) badge.outerHTML=invBadge(item.verification_status);
+      document.getElementById("inventoryDetailInitials").value="";
+      document.getElementById("inventoryDetailNoteStatus").textContent="Marked Not Found.";
+    }else showPortalNavNotice("Inventory marked Not Found.");
+  }else if(currentInventoryItem?.id===item.id && document.getElementById("inventoryItemManagement").classList.contains("active")) openInventoryItemManagement("replace");
 }
 async function openAddInventory(){
   if(!inventoryBinsReady||!inventoryCartsReady) await Promise.all([loadInventoryBins(),loadInventoryCarts()]);

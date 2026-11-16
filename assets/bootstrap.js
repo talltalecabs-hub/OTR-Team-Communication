@@ -25,6 +25,8 @@ const runtimeChecks={
   inventoryInitials,
   inventoryEventHeaders,
   openInventoryItemManagement,
+  saveInventoryNotes,
+  renderBinContents,
   openInventoryEventHistory,
   refreshFastMovePlacement,
   refreshFastMoveBins,

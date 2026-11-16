@@ -244,6 +244,35 @@ try{
   await portalWrite("vv","update inventory_items set verified_at=now() where id=$1",[known.id]);
   assert.equal((await event("verification_changed","VV")).inventory_item_id,known.id);
 
+  // Crew notes use the existing text field; edits audit only metadata and preserve imported provenance.
+  const importedForNotes=await one("select id from inventory_items where source_metadata ? 'source_row' and notes is not null limit 1");
+  assert(importedForNotes,"Notes regression requires a real workbook record with an existing note");
+  await portalWrite("nt","update inventory_items set tag_id='TAG-NOTES-PRESERVED' where id=$1",[importedForNotes.id]);
+  const beforeNotes=await record(importedForNotes.id);
+  assert.equal(typeof beforeNotes.source_metadata.source_row,"number");
+  const notesEventCount=await eventCount();
+  const editedNotes="Crew check: inspect the connector before use.\nKeep the physical label with this part.";
+  await assert.rejects(portalWrite(" ","update inventory_items set notes=$2,updated_at=$3 where id=$1",[beforeNotes.id,editedNotes,new Date().toISOString()]),/Initials are required/);
+  assert.deepEqual(await record(beforeNotes.id),beforeNotes);
+  assert.equal(await eventCount(),notesEventCount);
+  await portalWrite(" nz ","update inventory_items set notes=$2,updated_at=$3 where id=$1",[beforeNotes.id,editedNotes,new Date().toISOString()]);
+  const afterNotes=await record(beforeNotes.id);
+  assert.equal(afterNotes.notes,editedNotes);
+  for(const [key,value] of Object.entries(beforeNotes)) if(!["notes","updated_at"].includes(key)) assert.deepEqual(afterNotes[key],value,`Notes edit changed ${key}`);
+  assert.equal(await eventCount(),notesEventCount+1);
+  const notesEvent=await event("metadata_changed","NZ");
+  assert.equal(notesEvent.inventory_item_id,beforeNotes.id);
+  assert.equal(notesEvent.inventory_code,beforeNotes.inventory_code);
+  assert.equal(notesEvent.actor_initials,"NZ");
+  assert.equal(notesEvent.from_state.notes,beforeNotes.notes);
+  assert.equal(notesEvent.to_state.notes,editedNotes);
+  for(const key of ["inventory_code","source","source_metadata","original_quantity","original_item_text","original_location","tag_id","quantity","inventory_bin_id","cart_code","assignment_type","assigned_vehicle_code"]){
+    assert.deepEqual(notesEvent.from_state[key],beforeNotes[key],`Notes audit lost prior ${key}`);
+    assert.deepEqual(notesEvent.to_state[key],beforeNotes[key],`Notes audit changed ${key}`);
+  }
+  assert.equal(notesEvent.quantity_delta,0);
+  assert.equal(notesEvent.vehicle_code,null);
+
   // Independent actions in one transaction must not inherit RPC actor/type/request context.
   const txUseRequest=randomUUID(),txMoveRequest=randomUUID(),secondUseRequest=randomUUID();
   await portalTransaction("tx",async()=>{
@@ -304,7 +333,7 @@ try{
   assert.equal((await one("select count(*)::int as invalid from inventory_events where actor_initials='' or actor_initials<>upper(btrim(actor_initials))")).invalid,0);
   assert.deepEqual(await snapshot("vehicles"),preserved.vehicles);
   assert.deepEqual(await snapshot("submissions"),preserved.submissions);
-  console.log("PASS crew ledger PostgreSQL: data-preserving migration, required uppercase initials on every write, atomic/idempotent Use Part, zero/NULL counts, exact vehicles, immutable private-trigger audit, quantity correction, review/reorder/tag events, full/partial moves, placement consistency and transaction-isolated RPC audit context");
+  console.log("PASS crew ledger PostgreSQL: data-preserving migration, required uppercase initials on every write, atomic/idempotent Use Part, zero/NULL counts, exact vehicles, immutable private-trigger audit, quantity correction, review/reorder/tag events, notes edits preserving workbook provenance, full/partial moves, placement consistency and transaction-isolated RPC audit context");
 }finally{
   await db.close();
 }

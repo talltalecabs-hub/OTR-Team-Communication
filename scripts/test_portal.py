@@ -57,6 +57,7 @@ def make_item(number, code, name, platform="E92", quantity=3, bin_id=None, cart=
 
 INITIAL_BINS = [
     make_bin(200, "E92-000", "E92", "Loose inventory"),
+    make_bin(202, "E92-002", "E92", "Front suspension", "A"),
     make_bin(208, "E92-008", "E92", "Cooling system", "A"),
     make_bin(218, "E92-018", "E92", "Sensors / seals", "A"),
     make_bin(219, "E92-018-A", "E92", "Sensors", "A", uid(218)),
@@ -80,7 +81,16 @@ INITIAL_ITEMS = [
     make_item(7, "F30-LOOSE-A", "Loose rotor A", platform="F30", quantity=1, bin_id=uid(240), cart="F30-A"),
     make_item(8, "F30-LOOSE-B", "Loose rotor B", platform="F30", quantity=2, bin_id=uid(240), cart="F30-B"),
     make_item(9, "SHOP-01", "Shop hose stock", quantity=8, stock="Backstock"),
+    make_item(249, "E92-002-L249", "Center control arm bushing", quantity=None, bin_id=uid(202)),
 ]
+INITIAL_ITEMS[0].update(part_number="CTS-42", condition="Serviceable", notes="Pit lane spare")
+INITIAL_ITEMS[0]["source_metadata"]["label_text"] = "GLANDLABELTOKEN imported sensor label"
+INITIAL_ITEMS[1].update(category="Fasteners", condition="Used", notes="Assorted clips")
+INITIAL_ITEMS[-1].update(
+    notes="Prior crew note", tag_id="TAG-E92-002-L249-C599823B", part_number="BUSH-249-REF",
+    category="Suspension", source="OTR_Master_Inventory_F22_E92_Rear_Suspension_Update_2026-11-14.xlsx")
+INITIAL_ITEMS[-1]["source_metadata"].update(
+    source_row=249, label_text="CENTER CONTROL ARM BUSHING", photo_filename="IMG_LINEAGE_249.jpeg")
 # Misleading text must never make a part appear in the wrong bin's contents.
 INITIAL_ITEMS[3]["location"] = "E92-008"
 
@@ -363,6 +373,13 @@ def assert_handlers(page):
     assert not missing, missing
 
 
+def assert_label_pdf(page, filename, width, height):
+    pdf = page.pdf(path=str(OUTPUT / filename), prefer_css_page_size=True, print_background=True)
+    assert len(re.findall(rb"/Type\s*/Page\b", pdf)) == 1, filename
+    boxes = re.findall(rb"/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]", pdf)
+    assert boxes and all(abs(float(w) - width) <= .5 and abs(float(h) - height) <= .5 for w, h in boxes), (filename, boxes)
+
+
 def assert_no_request(backend, action):
     before = len(backend.attempts)
     action()
@@ -434,8 +451,8 @@ def run_checks(page, backend):
     path_keys = [key for key in detail_fields if key.strip().upper() == "LOCATION / BIN"]
     assert len(path_keys) == 1 and "E92-A" in detail_fields[path_keys[0]] and "E92-008" in detail_fields[path_keys[0]], detail_fields
     assert not any(key.strip().lower() in ["location", "bin"] for key in detail_fields)
-    assert "Use Part" in page.locator("#inventoryDetail .actions").inner_text()
-    assert "Verify / Correct" not in page.locator("#inventoryDetail .actions").inner_text()
+    assert "Use Part" in page.locator("#inventoryDetail .actions").first.inner_text()
+    assert "Verify / Correct" not in page.locator("#inventoryDetail .actions").first.inner_text()
     assert_handlers(page)
 
     # Use Part: exact vehicle registry, mandatory initials, quantity one by default.
@@ -545,6 +562,80 @@ def run_checks(page, backend):
     assert backend.item("F30-RETRY")["quantity"] == 3 and len(backend.events) == event_count
     assert backend.attempts[-1]["data"]["p_request_id"] == first_attempt["p_request_id"]
     page.wait_for_selector("#inventoryUseSuccess.active")
+
+    # The open-bin search only filters direct contents and keeps every row full width.
+    page.evaluate('openBinDetail("E92-008")')
+    assert page.locator("#binContentsSearch").is_visible()
+    assert page.input_value("#binContentsSearch") == ""
+    assert page.locator("#binContents").evaluate("el=>el.classList.contains('bin-contents-list')")
+    assert page.locator("#binContents .inventory-card").count() == 3
+    direct_count = page.locator("#binDetailWrap .inventory-field").filter(has=page.locator('.k', has_text="Direct contents")).inner_text()
+    assert "3 records" in direct_count, direct_count
+    for query in ["coolant temperature", "CTS-42", "E92-KNOWN", "Serviceable", "Pit lane spare", "GLANDLABELTOKEN"]:
+        page.fill("#binContentsSearch", query)
+        assert page.locator("#binContents .inventory-card").count() == 1, query
+        assert "Coolant temperature sensor" in page.locator("#binContents").inner_text(), query
+        assert "3 records" in page.locator("#binDetailWrap .inventory-field").filter(has=page.locator('.k', has_text="Direct contents")).inner_text()
+    page.fill("#binContentsSearch", "Fasteners")
+    assert page.locator("#binContents .inventory-card").count() == 1
+    assert "Uncounted hardware" in page.locator("#binContents").inner_text()
+    for query in ["Seal set", "Center control arm bushing", "definitely absent"]:
+        page.fill("#binContentsSearch", query)
+        assert page.locator("#binContents .inventory-card").count() == 0, query
+        assert "no match" in page.locator("#binContents").inner_text().lower(), query
+    page.fill("#binContentsSearch", "")
+    cards = page.locator("#binContents .inventory-card")
+    assert cards.count() == 3
+    boxes = [card.bounding_box() for card in cards.all()]
+    contents_box = page.locator("#binContents").bounding_box()
+    assert all(abs(box["x"] - contents_box["x"]) <= 1 and abs(box["width"] - contents_box["width"]) <= 1 for box in boxes), boxes
+    assert all(boxes[index]["y"] >= boxes[index-1]["y"] + boxes[index-1]["height"] for index in range(1, len(boxes))), boxes
+    page.fill("#binContentsSearch", "CTS-42")
+    page.locator("#binContents .inventory-card").click()
+    page.wait_for_selector("#inventoryDetail.active")
+    assert page.evaluate("currentInventoryItem.inventory_code") == "E92-KNOWN"
+    page.evaluate('openBinDetail("E92-002")')
+    assert page.input_value("#binContentsSearch") == ""
+    assert page.locator("#binContents .inventory-card").count() == 1
+    assert "Center control arm bushing" in page.locator("#binContents").inner_text()
+
+    # Crew notes and the distinct Not Found action are editable directly on part detail.
+    open_item(page, "E92-002-L249")
+    assert page.locator("#inventoryDetailNotes").is_visible()
+    assert page.input_value("#inventoryDetailNotes") == "Prior crew note"
+    assert page.locator("#inventoryDetailInitials").is_visible()
+    assert page.input_value("#inventoryDetailInitials") == ""
+    not_found = page.locator("#inventoryDetailNotFound")
+    assert not_found.is_visible() and "Not Found" in not_found.inner_text()
+    assert "danger" in not_found.get_attribute("class").split()
+    lineage_before = copy.deepcopy(backend.item("E92-002-L249"))
+    page.fill("#inventoryDetailNotes", "Crew note: check this bushing before Friday.")
+    assert_no_request(backend, lambda: page.locator("#inventoryDetailSaveNotes").click())
+    page.fill("#inventoryDetailInitials", " nt ")
+    with page.expect_response("**/inventory_items?id=eq.*"):
+        page.locator("#inventoryDetailSaveNotes").click()
+    page.wait_for_function("!document.getElementById('inventoryDetailSaveNotes').disabled")
+    lineage = backend.item("E92-002-L249")
+    assert lineage["notes"] == "Crew note: check this bushing before Friday."
+    note_event = backend.events[-1]
+    assert note_event["event_type"] == "metadata_changed" and note_event["actor_initials"] == "NT"
+    assert note_event["from_state"]["notes"] == "Prior crew note" and note_event["to_state"]["notes"] == lineage["notes"]
+    for key, value in lineage_before.items():
+        if key not in ["notes", "updated_at"]:
+            assert lineage[key] == value, key
+    assert page.input_value("#inventoryDetailInitials") == ""
+    page.fill("#inventoryDetailNotes", "Unsaved draft remains while marking Not Found.")
+    assert_no_request(backend, lambda: not_found.click())
+    page.fill("#inventoryDetailInitials", "nf")
+    with page.expect_response("**/inventory_items?id=eq.*"):
+        not_found.click()
+    page.wait_for_function("document.getElementById('inventoryDetailNoteStatus').textContent==='Marked Not Found.'")
+    assert page.input_value("#inventoryDetailNotes") == "Unsaved draft remains while marking Not Found."
+    assert lineage["notes"] == "Crew note: check this bushing before Friday."
+    assert lineage["verification_status"] == "Not Found" and lineage["status"] == "Missing"
+    assert lineage["quantity"] is None and lineage["source_metadata"] == lineage_before["source_metadata"]
+    assert backend.events[-1]["event_type"] == "verification_changed" and backend.events[-1]["actor_initials"] == "NF"
+    assert_handlers(page)
 
     # Management flags and stock-category changes require a fresh visible initials box.
     open_item(page, "E92-FLAGS")
@@ -667,9 +758,17 @@ def run_checks(page, backend):
     page.fill("#partTagInitials", "pt")
     page.evaluate("preparePartTag()")
     assert added["tag_id"] and added["quantity"] == 2
-    assert page.locator(".part-tag-face").count() == 4
+    assert page.locator("#labelPrintCanvas .part-tag-face").count() == 1
+    assert page.locator("#labelPrintCanvas .part-fold-sheet, #labelPrintCanvas .rotate").count() == 0
     dimensions = page.locator("#labelPrintCanvas").bounding_box()
-    assert dimensions["width"] == 384 and dimensions["height"] == 576
+    assert dimensions["width"] == 192 and dimensions["height"] == 96
+    face = page.locator("#labelPrintCanvas .part-tag-face")
+    human_text = face.inner_text()
+    assert human_text and human_text == human_text.upper(), human_text
+    assert face.locator(".label-code39").count() == 1
+    assert face.get_attribute("data-tag-id") == added["tag_id"]
+    assert "2×1" in page.locator("#labelPrintButton").inner_text()
+    assert_label_pdf(page, "part-label-2x1.pdf", 144, 72)
     tag = added["tag_id"]
     before_tag_events = len(backend.events)
     page.evaluate("preparePartTag()")
@@ -682,6 +781,31 @@ def run_checks(page, backend):
     page.evaluate("preparePartTag()")
     assert added["quantity"] == 3 and added["tag_id"] == tag
     assert backend.events[-1]["event_type"] == "quantity_corrected" and backend.events[-1]["actor_initials"] == "QC"
+
+    # Tiny labels keep unknown counts unknown and preserve workbook row lineage and stable tag identity.
+    lineage_before_label = copy.deepcopy(backend.item("E92-002-L249"))
+    page.evaluate('openPartTag("E92-002-L249")')
+    assert page.input_value("#partTagInitials") == ""
+    assert_no_request(backend, lambda: page.evaluate("preparePartTag()"))
+    lineage_face = page.locator("#labelPrintCanvas .part-tag-face")
+    assert lineage_face.count() == 1
+    assert lineage_face.get_attribute("data-tag-id") == "TAG-E92-002-L249-C599823B"
+    human_text = lineage_face.inner_text()
+    assert human_text == human_text.upper() and "CENTER CONTROL ARM BUSHING" in human_text
+    assert "E92-A" in human_text and "E92-002" in human_text
+    assert "UNCOUNTED" in human_text and not re.search(r"QTY\s+0(?:\D|$)", human_text), human_text
+    assert "L249" not in human_text and "IMG_LINEAGE" not in human_text and ".XLSX" not in human_text, human_text
+    assert "TAG-E92-002-L249-C599823B" in lineage_face.locator(".label-code39").get_attribute("aria-label")
+    assert backend.item("E92-002-L249") == lineage_before_label
+    assert backend.item("E92-002-L249")["source_metadata"]["source_row"] == 249
+    assert_label_pdf(page, "lineage-part-label-2x1.pdf", 144, 72)
+    page.evaluate('openBinLabel("E92-002")')
+    assert page.locator("#labelPrintCanvas .bin-label-sheet").count() == 1
+    assert page.locator("#labelPrintCanvas .part-tag-face").count() == 0
+    assert "4×6" in page.locator("#labelPrintButton").inner_text()
+    dimensions = page.locator("#labelPrintCanvas").bounding_box()
+    assert dimensions["width"] == 384 and dimensions["height"] == 576
+    assert_label_pdf(page, "bin-label-4x6.pdf", 288, 432)
 
     # Registered bins, loose containers on both carts, and UUID-only contents remain intact.
     page.evaluate('browseInventory("F30")')
@@ -762,7 +886,8 @@ def run_checks(page, backend):
                 known_null_and_zero_use="PASS", explicit_initials_all_paths="PASS", use_retry_idempotency="PASS",
                 pending_use_navigation="PASS", read_only_activity_history="PASS",
                 management_and_fast_move="PASS", ledger_events=len(backend.events), successful_inventory_requests=len(backend.writes),
-                submissions_and_offline_queue="PASS", exact_bin_contents="PASS", existing_4x6_canvas="PASS")
+                submissions_and_offline_queue="PASS", exact_bin_contents="PASS", current_bin_search_single_column="PASS",
+                direct_notes_and_not_found="PASS", part_2x1_uppercase_label="PASS", preserved_4x6_bin_label="PASS")
 
 
 backend = Backend()

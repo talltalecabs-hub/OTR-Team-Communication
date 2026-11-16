@@ -1,5 +1,5 @@
 // ----- Inventory Label & Bin Assistant V1 -----
-// 4x6 thermal stock only. Part tags use a 4x6 fold-wrap layout around a 2x3 paper tag.
+// Bin labels use 4x6 stock; individual part labels use one 2x1 face.
 
 const BIN_MAKE_PREFIX={
   BMW:"B",
@@ -629,14 +629,34 @@ async function openBinDetail(key,historyMode="push"){
     </div>
     ${children.length?`<h3 style="margin:22px 0 10px">Sub-bins</h3><div class="inventory-results">${children.map(child=>`<button type="button" class="inventory-card" onclick="openBinDetail('${escapeHtml(child.bin_code)}')"><strong>${escapeHtml(child.bin_code)}</strong><div class="meta">${escapeHtml(child.description||child.system)} • ${itemsForBin(child).length} direct records • ${escapeHtml(binCartLocationLabel(child))}</div></button>`).join("")}</div>`:""}
     <h3 style="margin:22px 0 10px">Contents</h3>
-    <div id="binContents" class="inventory-results">${items.length?items.map(item=>`<button type="button" class="inventory-card" onclick="openInventoryDetail('${escapeHtml(String(item.local_key)).replace(/'/g,"&#39;")}')">
-      <strong>${escapeHtml(item.item_name||"Unnamed item")}</strong>
-      <div class="meta"><span class="qty">Qty ${escapeHtml(inventoryQuantityLabel(item))}</span> • ${escapeHtml(item.condition||"Unspecified")}</div>
-      <div class="meta inventory-card-bin">📍 ${escapeHtml(inventoryItemLocationLabel(item))} • BIN <span class="label-mono">${escapeHtml(inventoryItemBinDisplayLabel(item))}</span></div>
-      <div class="meta">${escapeHtml(item.part_number||item.inventory_code||"")}</div>
-      ${item.reorder_flag?'<div class="meta" style="margin-top:8px"><span class="inv-badge review">REORDER</span></div>':""}
-    </button>`).join(""):'<div class="card"><strong>No individually tagged stock recorded directly in this bin.</strong><p class="small">This does not establish a physical count of zero. Review any sub-bins or count the contents.</p></div>'}</div>`;
+    <label for="binContentsSearch">Search this bin</label>
+    <input id="binContentsSearch" class="inventory-search" type="search" placeholder="Search this bin's parts, part numbers, notes…" oninput="renderBinContents()" />
+    <p id="binContentsCount" class="small" role="status" aria-live="polite"></p>
+    <div id="binContents" class="inventory-results bin-contents-list"></div>`;
+  renderBinContents();
   showScreen("binDetail",{historyMode});
+}
+
+function renderBinContents(){
+  const wrap=document.getElementById("binContents");
+  if(!wrap || !currentInventoryBin) return;
+  const all=itemsForBin(currentInventoryBin);
+  const terms=String(document.getElementById("binContentsSearch")?.value||"").trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const rows=all.filter(item=>{
+    const hay=[item.item_name,item.part_number,item.inventory_code,item.condition,item.category,item.notes,item.use_case,
+      item.source_metadata?.label_text,item.source_metadata?.label_note].filter(Boolean).join(" ").toLowerCase();
+    return terms.every(term=>hay.includes(term));
+  });
+  document.getElementById("binContentsCount").textContent=`${rows.length} of ${all.length} direct item record${all.length===1?"":"s"}`;
+  wrap.innerHTML=rows.length?rows.map(item=>`<button type="button" class="inventory-card" onclick="openInventoryDetail('${escapeHtml(String(item.local_key)).replace(/'/g,"&#39;")}')">
+    <strong>${escapeHtml(item.item_name||"Unnamed item")}</strong>
+    <div class="meta"><span class="qty">Qty ${escapeHtml(inventoryQuantityLabel(item))}</span> • ${escapeHtml(item.condition||"Unspecified")}</div>
+    <div class="meta inventory-card-bin">📍 ${escapeHtml(inventoryItemLocationLabel(item))} • BIN <span class="label-mono">${escapeHtml(inventoryItemBinDisplayLabel(item))}</span></div>
+    <div class="meta">${escapeHtml(item.part_number||item.inventory_code||"")}</div>
+    ${item.reorder_flag?'<div class="meta" style="margin-top:8px"><span class="inv-badge review">REORDER</span></div>':""}
+  </button>`).join(""):all.length
+    ? '<div class="card"><strong>No matching parts in this bin.</strong><p class="small">Clear the search to see all of this bin’s contents.</p></div>'
+    : '<div class="card"><strong>No individually tagged stock recorded directly in this bin.</strong><p class="small">This does not establish a physical count of zero. Review any sub-bins or count the contents.</p></div>';
 }
 
 function refreshFastMovePlacement(){
@@ -931,16 +951,20 @@ function labelScanBlock(value){
   return `<div class="label-scan-block">${code39Svg(data)}<div class="label-scan-id">${escapeHtml(data)}</div></div>`;
 }
 
-function partFaceHtml(item,rotate=false){
+function partFaceHtml(item){
+  // Uppercase presentation only. Stored inventory/tag/source identity is untouched.
+  const upper=value=>labelSafeText(value).toUpperCase();
   const code=item.tag_id||stablePartTagId(item);
-  const binCode=inventoryItemBinLabel(item)||"—";
-  const placement=`${inventoryItemLocationLabel(item)} / ${binCode}`;
-  return `<div class="part-tag-face${rotate?" rotate":""}">
-    <div class="part-tag-brand">OTR • PART TAG</div>
-    <div class="part-tag-name">${escapeHtml(item.item_name||"Inventory Item")}</div>
-    <div class="part-tag-row"><strong>${escapeHtml(item.part_number||item.inventory_code||"NO P/N")}</strong><span>QTY ${escapeHtml(inventoryQuantityLabel(item))}</span></div>
-    <div class="part-tag-location">${escapeHtml(placement)}</div>
-    ${labelScanBlock(code)}
+  const bin=inventoryItemBinDisplayLabel(item);
+  const placement=`${inventoryItemLocationLabel(item)} • ${bin}`;
+  const name=upper(item.item_name||"Inventory Item");
+  const size=name.length>50?"7pt":name.length>32?"8pt":"9pt";
+  return `<div class="part-tag-face" data-tag-id="${escapeHtml(code)}">
+    <div class="part-tag-brand">OTR PART</div>
+    <div class="part-tag-name" style="font-size:${size}">${escapeHtml(name)}</div>
+    <div class="part-tag-location">${escapeHtml(upper(placement))}</div>
+    <div class="part-tag-quantity">QTY ${escapeHtml(upper(inventoryQuantityLabel(item)))}</div>
+    <div class="label-scan-block">${code39Svg(code)}${code.length<=24?`<div class="label-scan-id">${escapeHtml(upper(code))}</div>`:""}</div>
   </div>`;
 }
 
@@ -960,19 +984,19 @@ function binLabelHtml(bin){
 function renderLabelPreview(){
   const wrap=document.getElementById("labelPrintCanvas");
   const note=document.getElementById("labelPrintNote");
+  const button=document.getElementById("labelPrintButton");
   if(!wrap||!currentLabelPayload) return;
-  if(currentLabelPayload.type==="bin"){
+  const part=currentLabelPayload.type==="part";
+  document.body.classList.toggle("print-part-label",part);
+  wrap.classList.toggle("part-label-canvas",part);
+  if(!part){
     wrap.innerHTML=binLabelHtml(currentLabelPayload.bin);
-    if(note) note.textContent="4×6 bin label • browser print path";
+    if(note) note.textContent="4×6 bin label • browser print preview";
+    if(button) button.textContent="Print 4×6 Bin Label";
   }else{
-    const item=currentLabelPayload.item;
-    wrap.innerHTML=`<div class="part-fold-sheet">
-      ${partFaceHtml(item,false)}
-      ${partFaceHtml(item,false)}
-      ${partFaceHtml(item,true)}
-      ${partFaceHtml(item,true)}
-    </div>`;
-    if(note) note.textContent="4×6 fold-wrap prototype • four 2×3 faces around a 2×3 paper tag";
+    wrap.innerHTML=partFaceHtml(currentLabelPayload.item);
+    if(note) note.textContent="Single 2×1 part label • placeholder barcode";
+    if(button) button.textContent="Print 2×1 Part Label";
   }
 }
 

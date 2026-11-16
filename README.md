@@ -6,7 +6,7 @@ Trackside-friendly team feedback, post-event reporting, administration, and shar
 
 Production remains V1.2.1 on GitHub Pages, with Supabase authoritative for shared submissions, inventory, and the exact vehicle registry. Mobile inventory travels with the team; Backstock stays at the shop. Each race chassis has independent Cart A/B locations. Failed submissions stay in a device-local queue and retry when connectivity returns. Current counts change as the crew works; the historical seed is not the live inventory count.
 
-This branch prepares V1.3.0 for PR review: a search-first crew workflow, atomic Use Part consumption, required initials for inventory changes, and an append-only activity ledger. It has not been deployed, and its production migration has not been applied. See [Inventory crew workflow](docs/inventory-crew-workflow.md) for behavior, local checks, and the coordinated rollout requirements.
+This branch prepares V1.3.0 for PR review: a search-first crew workflow, atomic Use Part consumption, required initials for inventory changes, and an append-only activity ledger. It also includes the later bin/part refinement: searchable bin contents, direct Not Found and editable notes on part detail, and single-face 2×1 part labels. It has not been deployed, and its production migration has not been applied. See [Inventory crew workflow](docs/inventory-crew-workflow.md) and [Bin, part, and label UX](docs/bin-part-label-ux.md) for behavior, local checks, and release requirements.
 
 ## Project structure
 
@@ -17,7 +17,7 @@ assets/config.js           Public Supabase project configuration
 assets/core.js             Navigation, shared state, and UI utilities
 assets/submissions.js      Feedback, post-event, admin, and offline queue
 assets/inventory.js        Supabase-backed Inventory Assistant
-assets/labels.js           Inventory Label & Bin Assistant + 4x6 print layouts
+assets/labels.js           Bin/part assistant, 4x6 bin labels, and 2x1 part labels
 assets/crew.js             Use Part, initials, and inventory activity viewer
 assets/bootstrap.js        Startup checks and queue synchronization
 supabase/migrations/20261114225322_inventory_crew_workflow.sql
@@ -57,9 +57,11 @@ records consumption against an exact vehicle without changing stock placement.
 
 Inventory Management contains Backstock, Search All, Add Part, Bins & Placement,
 Fast Move, and Inventory Activity. Corrections, flags, placement, and label actions
-remain available through a part's management screen. Open Bins lists chassis bins
-in numeric order, including 000 for loose stock; opening a bin shows only its
-direct contents, with separate links to sub-bins.
+remain available through a part's management screen. Not Found and editable Notes
+are also available directly on part detail, with required initials for changes.
+Open Bins lists chassis bins in numeric order, including 000 for loose stock;
+opening a bin shows only its direct contents in one full-width column, with a
+search limited to that bin and separate links to sub-bins.
 
 ## Local preview
 
@@ -80,14 +82,14 @@ GitHub Pages publishes the root of `main`. This branch is for PR review only. Do
 - Historical V1 seed remains 297 records / 690 units. Current shared inventory may include later crew changes.
 - Prepared replacement has 92 F22 and 123 E92 labels, five unknown counts, and printed set/lot units. F30 and Boxster rows are preserved exactly.
 - Chassis selectors offer the seeded exact vehicle registry (23 vehicles across race, street, tow, and trailer platforms).
-- Label Assistant handlers resolve, 4×6 print rules are present, and the existing 297-record inventory seed remains unchanged.
+- Label Assistant handlers resolve, bin labels remain 4×6, part labels are single-face 2×1 with uppercase wording, and the historical inventory seed remains unchanged.
 - Use Part and Fast Move commit inventory changes and ledger events atomically.
 - Inventory writes require visible initials; audit history is append-only for portal users.
 - Known stock cannot be consumed below zero; unknown stock remains uncounted after use.
 
 For a new empty environment, install `supabase/schema.sql` and `supabase/vehicles_schema.sql` before the dependent inventory schemas. The current deployment already has the exact vehicle registry; V1.3.0 does not replace or reseed it.
 
-The Label Assistant uses only 4×6 thermal adhesive stock. Full bin labels occupy a 4×6 sheet; individual part labels use that same stock in a fold-wrap prototype around a 2×3 paper tag. There is no separate 2×3 media or printer path. Physical fold geometry and barcode scanning still require a printer test.
+The latest label handoff replaces the earlier part-tag fold-wrap requirement. Bin labels remain full 4×6 labels. Individual part labels now target one 2×1-inch face with uppercase wording and a placeholder barcode. Stable tag/inventory identities and source provenance are preserved. Final printer/scanner integration and calibration are deferred; see [Bin, part, and label UX](docs/bin-part-label-ux.md).
 
 The earlier F22/E92 production activation is complete. See [F22/E92 inventory update](docs/inventory-f22-e92-update.md) for source totals, private backups, rollout results, and deployment order for another environment: label schema, count schema, then replacement SQL. Frontend and database rollout must be coordinated; merging the frontend alone does not update shared inventory. Do not rerun the historical seed after the replacement.
 

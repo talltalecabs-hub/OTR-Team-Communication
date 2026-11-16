@@ -4,6 +4,11 @@ This branch prepares the crew workflow handoff for PR review. Production remains
 V1.2.1. No production migration, data replacement, or deployment is part of this
 delivery.
 
+The same V1.3.0 PR also includes the later
+[bin, part, and label refinement](bin-part-label-ux.md). That handoff replaces the
+previous part-label fold-wrap specification with one 2×1-inch face; bin labels
+remain 4×6. It does not add another database migration.
+
 The branch starts from `main` at
 `59a9553cc9839240e8f98145417fb2c01fd629c5`, preserving the previous inventory
 navigation, home shortcut, bin directory, carts, and Mobile/Backstock work.
@@ -22,6 +27,8 @@ Search cards show quantity plus a physical path such as
 `Location / Bin` row, with a clickable Bin ID. Unassigned and Backstock locations
 remain explicit. Chassis **Open Bins** and exact direct-bin contents remain
 available, including loose `XXX-000` bins and separate sub-bin links.
+An open bin's direct contents use a single full-width column with a search field
+that filters only that bin. Clearing the query restores all direct contents.
 
 The primary part action is:
 
@@ -52,6 +59,11 @@ visible **Initials** field. Initials are trimmed, uppercased, and required to be
 placement, bin, and tag changes use their own field. Initials are not silently
 reused between screens.
 
+Part detail also keeps **Not Found** visible and provides an editable **Notes**
+textarea. Both require visible initials to save. Notes use the existing `notes`
+column, with old and new values captured by the ledger's `metadata_changed`
+event. Notes remain separate from imported/source provenance and use-case data.
+
 Fast Move follows **Inventory Type → Chassis → Cart → Bin** after selecting a
 part. Mobile placement requires a chassis. Physical bins inherit their cart;
 loose `XXX-000` stock can carry a direct cart assignment. Backstock cannot retain
@@ -80,6 +92,10 @@ count, bin, and cart schemas are already installed.
 | `use_inventory_part` | Locks the item, validates the exact vehicle and quantity, consumes known stock, records unknown-count use, and supports idempotent retry. |
 | `move_inventory_part` | Validates destination type/chassis/cart/bin and atomically handles full or partial movement with request replay protection. |
 | Inventory Activity | Read-only view of the newest 100 events. The browser never inserts ledger records. |
+
+The later Notes action uses the existing item audit trigger and `notes` column;
+the bin-search and label layout refinements are frontend changes. No additional
+migration is required for those refinements.
 
 Direct item/bin requests pass normalized initials in `x-otr-initials`. RPCs take
 explicit actor initials and transaction-scoped operation context. Private trigger
@@ -110,9 +126,14 @@ unknown counts. Neither historical file is rerun against current stock.
 
 Feedback, Post-Event Report, Driver's Lounge, Shop Talk, Admin / Local Queue,
 exact vehicle identities, and existing source records remain within the
-regression scope. The label stock remains exclusively 4×6: full bin labels use
-the full sheet, and individual part tags use that same adhesive stock folded
-around a 2×3 paper tag. Physical printer testing is deferred by the handoff.
+regression scope. The latest label handoff keeps bin labels at 4×6 and changes
+individual part labels to one 2×1-inch face, with uppercase human-readable text
+and the placeholder barcode retained. It supersedes the earlier fold-wrap part
+tag. Final printer/scanner integration and calibration remain deferred.
+
+Lineage identifiers are preserved. In the handoff example `E92-002-L249`, `L249`
+means source workbook row 249, not a part number or bin code. Label presentation
+does not rewrite that identity or its source metadata.
 
 ## Local validation
 
