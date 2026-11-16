@@ -108,7 +108,9 @@ assert.equal(snapshot.parts.filter(row=>row.source_chassis==="F22/F30" && row.pl
 assert.equal(snapshot.parts.filter(row=>row.quantity===null && row.quantity_raw==="VARIOUS").length,1);
 assert.equal(snapshot.parts.find(row=>row.item_name==="Valvetronic actuator").quantity,0);
 const css=readFileSync(join(assetsDir,"styles.css"),"utf8");
-assert.match(css,/@page\s*\{\s*size:\s*4in 6in/);
+assert.match(css,/@page\s+otr-bin\s*\{\s*size:\s*4in 6in/);
+assert.match(css,/@page\s+otr-part\s*\{\s*size:\s*2in 1in/);
+assert.doesNotMatch(css,/part-fold-sheet|part-tag-face\.rotate/);
 assert.doesNotMatch(css,/@page\s*\{\s*size:\s*2in 3in/);
 execFileSync(process.execPath,[join(root,"scripts/build_inventory_update.mjs"),"--check"],{stdio:"inherit"});
 
@@ -116,4 +118,4 @@ console.log(`PASS ${allJavascriptFiles.length} JavaScript syntax checks`);
 console.log(`PASS ${new Set(handlerNames).size} inline handler checks`);
 console.log("PASS preserved V1 seed: 297 unique records / 690 units");
 console.log("PASS workbook: F22 92 labels / E92 123 labels; 5 unknown counts; source units preserved");
-console.log("PASS bin directory: 43 entries / 39 numbered parent bins; 4×6 print stock only");
+console.log("PASS bin directory: 43 entries / 39 numbered parent bins; 4×6 bin labels / single 2×1 part labels");
