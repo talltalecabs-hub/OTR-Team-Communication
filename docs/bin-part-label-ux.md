@@ -2,9 +2,9 @@
 
 This refinement extends the V1.3.0 crew-workflow PR on
 `feature/inventory-crew-workflow`. It follows the later
-`OTRos_Bin_Part_Label_UX_Handoff` specification. Production remains V1.2.1;
-this work is for PR review, without merging, deploying, or applying production
-migrations.
+`OTRos_Bin_Part_Label_UX_Handoff` specification. The V1.3.0 production rollout
+was authorized on 2026-11-16 after validation, including the prepared crew
+workflow migration. This refinement adds no additional schema migration.
 
 ## Open-bin contents
 

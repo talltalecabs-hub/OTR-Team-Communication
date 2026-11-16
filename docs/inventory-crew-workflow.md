@@ -1,8 +1,8 @@
 # Inventory crew workflow — V1.3.0
 
-This branch prepares the crew workflow handoff for PR review. Production remains
-V1.2.1. No production migration, data replacement, or deployment is part of this
-delivery.
+The V1.3.0 rollout was authorized on 2026-11-16 after local validation.
+It upgrades V1.2.1 with the prepared inventory ledger migration and the matching
+frontend. Existing inventory is preserved; this release does not replace data.
 
 The same V1.3.0 PR also includes the later
 [bin, part, and label refinement](bin-part-label-ux.md). That handoff replaces the
@@ -168,8 +168,8 @@ production deployment or a physical printer test.
 
 ## Compatibility and future rollout
 
-The frontend and migration must be released together when separately authorized.
-This PR does not perform those steps.
+The frontend and migration must be released together. The V1.3.0 rollout was
+authorized on 2026-11-16; the sequence below also applies to future environments.
 
 1. Review the PR and migration against the current production schema and take the
    normal database backup/snapshot. Keep live crew inventory writes paused during

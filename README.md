@@ -4,9 +4,9 @@ Trackside-friendly team feedback, post-event reporting, administration, and shar
 
 ## Current release
 
-Production remains V1.2.1 on GitHub Pages, with Supabase authoritative for shared submissions, inventory, and the exact vehicle registry. Mobile inventory travels with the team; Backstock stays at the shop. Each race chassis has independent Cart A/B locations. Failed submissions stay in a device-local queue and retry when connectivity returns. Current counts change as the crew works; the historical seed is not the live inventory count.
+V1.3.0 uses GitHub Pages, with Supabase authoritative for shared submissions, inventory, and the exact vehicle registry. Mobile inventory travels with the team; Backstock stays at the shop. Each race chassis has independent Cart A/B locations. Failed submissions stay in a device-local queue and retry when connectivity returns. Current counts change as the crew works; the historical seed is not the live inventory count.
 
-This branch prepares V1.3.0 for PR review: a search-first crew workflow, atomic Use Part consumption, required initials for inventory changes, and an append-only activity ledger. It also includes the later bin/part refinement: searchable bin contents, direct Not Found and editable notes on part detail, and single-face 2×1 part labels. It has not been deployed, and its production migration has not been applied. See [Inventory crew workflow](docs/inventory-crew-workflow.md) and [Bin, part, and label UX](docs/bin-part-label-ux.md) for behavior, local checks, and release requirements.
+V1.3.0 adds a search-first crew workflow, atomic Use Part consumption, required initials for inventory changes, and an append-only activity ledger. It also includes the later bin/part refinement: searchable bin contents, direct Not Found and editable notes on part detail, and single-face 2×1 part labels. See [Inventory crew workflow](docs/inventory-crew-workflow.md) and [Bin, part, and label UX](docs/bin-part-label-ux.md) for behavior, local checks, and release requirements.
 
 ## Project structure
 
@@ -69,7 +69,7 @@ Serve this directory with any static web server, then open `index.html`. Avoid o
 
 ## Deployment
 
-GitHub Pages publishes the root of `main`. This branch is for PR review only. Do not merge or apply its migration until rollout is separately authorized. V1.3.0 requires a coordinated database/frontend release and refreshed browser tabs; see the [compatibility and rollout notes](docs/inventory-crew-workflow.md#compatibility-and-future-rollout).
+GitHub Pages publishes the root of `main`. The V1.3.0 rollout was authorized on 2026-11-16. V1.3.0 requires a coordinated database/frontend release and refreshed browser tabs; see the [compatibility and rollout notes](docs/inventory-crew-workflow.md#compatibility-and-future-rollout).
 
 ## Required checks
 
