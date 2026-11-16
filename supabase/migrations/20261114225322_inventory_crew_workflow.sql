@@ -1,5 +1,8 @@
 -- Crew workflow ledger. Apply after the existing inventory, cart and bin schemas.
 -- Existing inventory rows are not rewritten or backfilled with invented events.
+-- Pin the existing timestamp helper as well as the new audit/RPC functions.
+alter function public.set_inventory_updated_at() set search_path=pg_catalog;
+
 create schema if not exists otr_inventory_internal;
 revoke all on schema otr_inventory_internal from public, anon, authenticated;
 

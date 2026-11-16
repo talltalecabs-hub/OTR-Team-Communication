@@ -54,6 +54,7 @@ try{
   const preserved={};
   for(const table of ["inventory_items","inventory_bins","inventory_carts","vehicles","submissions"]) preserved[table]=await snapshot(table);
   await db.exec(read(migration));
+  assert((await one("select proconfig from pg_proc where oid='public.set_inventory_updated_at()'::regprocedure")).proconfig.includes("search_path=pg_catalog"));
   for(const [table,before] of Object.entries(preserved)) assert.deepEqual(await snapshot(table),before,`${table} changed during ledger installation`);
   assert.equal(await eventCount(),0,"Do not invent historical ledger entries");
   await db.exec(read(migration));
