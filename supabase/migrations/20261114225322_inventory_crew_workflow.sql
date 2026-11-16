@@ -293,14 +293,15 @@ create or replace function public.use_inventory_part(
   p_request_id uuid
 )
 returns jsonb language plpgsql security invoker set search_path=pg_catalog
--- Function-local GUC scopes restore all audit context on return or exception;
--- another inventory action in the same transaction must use its own initials.
-set otr.actor_initials='' set otr.inventory_event_type=''
-set otr.inventory_request_id='' set otr.inventory_operation_item_id=''
-set otr.inventory_operation_data='' set otr.inventory_vehicle_code=''
-set otr.inventory_quantity_delta='' as $$
+-- Managed Postgres does not allow custom parameters in CREATE FUNCTION SET.
+-- Save/restore transaction-local context explicitly on success. If this statement
+-- raises, PostgreSQL transaction/subtransaction rollback restores the settings.
+as $$
 declare
   v_actor text:=upper(btrim(coalesce(p_actor_initials,'')));
+  v_context jsonb:='{}'::jsonb;
+  v_setting text;
+  v_original text;
   v_item public.inventory_items%rowtype;
   v_event public.inventory_events%rowtype;
   v_operation jsonb;
@@ -320,6 +321,12 @@ begin
   end if;
   if v_item.quantity is not null and p_quantity>v_item.quantity then raise exception 'Quantity used exceeds available stock'; end if;
   v_after:=v_item.quantity-p_quantity;
+  foreach v_setting in array array['otr.actor_initials','otr.inventory_event_type',
+    'otr.inventory_request_id','otr.inventory_operation_item_id','otr.inventory_operation_data',
+    'otr.inventory_vehicle_code','otr.inventory_quantity_delta'] loop
+    v_context:=v_context||jsonb_build_object(v_setting,coalesce(current_setting(v_setting,true),''));
+    perform set_config(v_setting,'',true);
+  end loop;
   perform set_config('otr.actor_initials',v_actor,true);
   perform set_config('otr.inventory_event_type','use_part',true);
   perform set_config('otr.inventory_request_id',p_request_id::text,true);
@@ -334,6 +341,9 @@ begin
   where id=p_item_id;
   select * into v_event from public.inventory_events where request_id=p_request_id and event_type='use_part';
   if not found then raise exception 'Inventory event was not recorded'; end if;
+  for v_setting,v_original in select key,value from jsonb_each_text(v_context) loop
+    perform set_config(v_setting,v_original,true);
+  end loop;
   return jsonb_build_object('event_id',v_event.id,'item_id',p_item_id,'quantity_before',v_item.quantity,'quantity_after',v_after,'quantity_used',p_quantity,'vehicle_code',p_vehicle_code,'actor_initials',v_actor,'replayed',false);
 end;
 $$;
@@ -352,14 +362,15 @@ create or replace function public.move_inventory_part(
   p_request_id uuid
 )
 returns jsonb language plpgsql security invoker set search_path=pg_catalog
--- Function-local GUC scopes restore all audit context on return or exception;
--- another inventory action in the same transaction must use its own initials.
-set otr.actor_initials='' set otr.inventory_event_type=''
-set otr.inventory_request_id='' set otr.inventory_operation_item_id=''
-set otr.inventory_operation_data='' set otr.inventory_vehicle_code=''
-set otr.inventory_quantity_delta='' as $$
+-- Managed Postgres does not allow custom parameters in CREATE FUNCTION SET.
+-- Save/restore transaction-local context explicitly on success. If this statement
+-- raises, PostgreSQL transaction/subtransaction rollback restores the settings.
+as $$
 declare
   v_actor text:=upper(btrim(coalesce(p_actor_initials,'')));
+  v_context jsonb:='{}'::jsonb;
+  v_setting text;
+  v_original text;
   v_item public.inventory_items%rowtype;
   v_bin public.inventory_bins%rowtype;
   v_cart text;
@@ -406,6 +417,12 @@ begin
   end if;
   v_location:=coalesce(v_bin.bin_code,case when p_stock_category='Backstock' then 'Backstock' else coalesce(p_cart_code,'Unassigned') end);
   v_result_id:=case when p_quantity=v_item.quantity then v_item.id else gen_random_uuid() end;
+  foreach v_setting in array array['otr.actor_initials','otr.inventory_event_type',
+    'otr.inventory_request_id','otr.inventory_operation_item_id','otr.inventory_operation_data',
+    'otr.inventory_vehicle_code','otr.inventory_quantity_delta'] loop
+    v_context:=v_context||jsonb_build_object(v_setting,coalesce(current_setting(v_setting,true),''));
+    perform set_config(v_setting,'',true);
+  end loop;
   perform set_config('otr.actor_initials',v_actor,true);
   perform set_config('otr.inventory_event_type','move_inventory',true);
   perform set_config('otr.inventory_request_id',p_request_id::text,true);
@@ -433,6 +450,9 @@ begin
     v_new.updated_at:=now();
     insert into public.inventory_items select (v_new).*;
   end if;
+  for v_setting,v_original in select key,value from jsonb_each_text(v_context) loop
+    perform set_config(v_setting,v_original,true);
+  end loop;
   return jsonb_build_object('item_id',v_result_id,'split',v_result_id<>p_item_id,'replayed',false);
 end;
 $$;

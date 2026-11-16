@@ -59,6 +59,18 @@ try{
   assert.equal(await eventCount(),0,"Do not invent historical ledger entries");
   await db.exec(read(migration));
   assert.equal(await eventCount(),0,"Migration rerun should not create events");
+  // Supabase's migration owner is not a superuser. Both RPC declarations must
+  // be creatable by a normal owner, including all function configuration.
+  await db.exec("create role managed_migration_owner; grant create on schema public to managed_migration_owner;");
+  await db.exec("set role managed_migration_owner");
+  try{
+    const rpcDefinitions=[...read(migration).matchAll(/create or replace function public\.(use_inventory_part|move_inventory_part)\([\s\S]*?\n\$\$;/g)];
+    assert.equal(rpcDefinitions.length,2);
+    for(const [definition,name] of rpcDefinitions){
+      await db.exec(definition.replace(`public.${name}(`,`public.test_managed_${name}(`));
+    }
+  }finally{await db.exec("reset role");}
+
 
   const regular=await one("select * from inventory_bins where bin_code='E92-008'");
   const looseE92=await one("select * from inventory_bins where bin_code='E92-000'");
