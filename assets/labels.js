@@ -91,6 +91,9 @@ let currentLabelPayload=null;
 let binAssignmentPending=false;
 let binCartSavePending=false;
 let binCreatePending=false;
+let binCodeAutomatic=true;
+let binCodeSeries="";
+let binCreateRequestId=null;
 let binMoveUnconfirmed=false;
 let binMoveDestinationPreset=false;
 
@@ -336,40 +339,38 @@ function subsystemCode(value){
   return known[value]||binToken(value,5);
 }
 
+function binSeriesPrefix(model){
+  return CART_CHASSIS_CODES[model]||(model==="M235 / M235iR"?"F22":modelCode(model));
+}
 function binBaseCode(){
-  const make=document.getElementById("binMake")?.value||"";
-  const model=document.getElementById("binModel")?.value||"";
-  const system=document.getElementById("binSystem")?.value||"";
-  const subsystem=document.getElementById("binSubsystem")?.value||"";
-  if(!make||!model||!system) return "";
-  const prefix=BIN_MAKE_PREFIX[make]||"X";
-  const parts=[prefix,modelCode(model),BIN_SYSTEM_CODES[system]||binToken(system,5)];
-  if(subsystem) parts.push(subsystemCode(subsystem));
-  return parts.join("-");
+  const make=document.getElementById("binMake")?.value;
+  const model=document.getElementById("binModel")?.value;
+  return make&&model?binSeriesPrefix(model):"";
 }
-
 function nextBinCode(base){
-  if(!base) return "";
-  const used=inventoryBins
-    .map(bin=>labelSafeText(bin.bin_code))
-    .filter(code=>code.startsWith(`${base}-`))
-    .map(code=>Number(code.slice(base.length+1)))
-    .filter(Number.isFinite);
-  const next=(used.length?Math.max(...used):0)+1;
-  return `${base}-${String(next).padStart(2,"0")}`;
+  if(!base)return "";
+  const used=inventoryBins.map(bin=>String(bin.bin_code||"")).filter(code=>code.startsWith(`${base}-`))
+    .map(code=>code.slice(base.length+1).match(/^(\d{3,})(?:-[A-Z]+)?$/)?.[1])
+    .map(Number).filter(value=>Number.isSafeInteger(value)&&value>=0);
+  return `${base}-${String((used.length?Math.max(...used):0)+1).padStart(3,"0")}`;
 }
-
+function editProposedBinCode(){
+  binCodeAutomatic=false;
+  const input=document.getElementById("binCodePreview");input.value=input.value.toUpperCase();
+}
+async function useNextBinCode(){if(await loadInventoryBins()){binCodeAutomatic=true;refreshBinCodePreview();}}
 function refreshBinCodePreview(){
-  const preview=document.getElementById("binCodePreview");
-  if(!preview) return;
+  const input=document.getElementById("binCodePreview");if(!input)return;
   const cartSelect=document.getElementById("binCartLocation");
   const model=document.getElementById("binModel")?.value;
-  const prefix=CART_CHASSIS_CODES[model];
+  const prefix=CART_CHASSIS_CODES[model]||(model==="M235 / M235iR"?"F22":null);
   const previous=cartSelect.value;
   cartSelect.innerHTML='<option value="">Unassigned</option>'+(prefix?`<option value="A">${prefix}-A</option><option value="B">${prefix}-B</option>`:"");
-  cartSelect.value=prefix && ["A","B"].includes(previous)?previous:"";
+  cartSelect.value=prefix&&["A","B"].includes(previous)?previous:"";
   const base=binBaseCode();
-  preview.textContent=base ? nextBinCode(base) : "Choose make, model, and system";
+  if(base!==binCodeSeries){binCodeAutomatic=true;binCodeSeries=base;}
+  if(binCodeAutomatic)input.value=base&&inventoryBinsReady?nextBinCode(base):"";
+  input.placeholder="Choose make and chassis first";
 }
 
 function refreshBinModelOptions(){
@@ -429,6 +430,7 @@ async function openLabelAssistant(){
 }
 
 function resetCreateBinForm(){
+  binCodeAutomatic=true;binCodeSeries="";binCreateRequestId=inventoryOperationId();
   ["binMake","binModel","binSystem","binSubsystem","binCartLocation"].forEach(id=>{
     const field=document.getElementById(id);
     if(field) field.selectedIndex=0;
@@ -443,13 +445,13 @@ function resetCreateBinForm(){
 }
 
 async function openCreateBin(){
-  if(!inventoryBinsReady) await loadInventoryBins();
+  await loadInventoryBins();
   resetCreateBinForm();
   document.getElementById("binCreateInitials").value="";
   showScreen("binCreate");
 }
 
-async function insertInventoryBin(payload,initials,retry=true){
+async function insertInventoryBin(payload,initials,retry=true,allowRenumber=true){
   const response=await fetch(`${SUPABASE_URL}/rest/v1/inventory_bins`,{
     method:"POST",
     headers:{...inventoryEventHeaders(initials),"Prefer":"return=representation"},
@@ -460,65 +462,63 @@ async function insertInventoryBin(payload,initials,retry=true){
     if(!rows?.[0]?.id) throw new Error("The bin save could not be confirmed. Refresh the registry.");
     return rows[0];
   }
-  if(response.status===409 && retry){
-    await loadInventoryBins();
-    const base=[payload.make_prefix,modelCode(payload.model),BIN_SYSTEM_CODES[payload.system]||binToken(payload.system,5)]
-      .concat(payload.subsystem?[subsystemCode(payload.subsystem)]:[])
-      .join("-");
-    const next=nextBinCode(base);
-    return insertInventoryBin({...payload,bin_code:next,qr_value:`OTR:BIN:${next}`},initials,false);
+  if(response.status===409){
+    if(!await loadInventoryBins())throw new Error("Refresh the bin registry before retrying.");
+    const previous=inventoryBins.find(bin=>bin.id===payload.id);
+    if(previous)return previous;
+    if(retry&&allowRenumber){
+      const next=nextBinCode(binSeriesPrefix(payload.model));
+      return insertInventoryBin({...payload,bin_code:next,qr_value:`OTR:BIN:${next}`},initials,false,true);
+    }
+    throw new Error("That Bin ID is already registered. Choose another ID or use the next available number.");
   }
   const message=await response.text();
   throw new Error(`Bin insert failed: ${response.status} ${message}`);
 }
 
 async function createInventoryBin(){
-  if(binCreatePending) return;
-  const initials=inventoryInitials("binCreateInitials");
-  if(!initials) return;
-  if(!inventoryBinsReady){
-    alert("Bin registry is unavailable. Please retry when the connection is restored.");
-    return;
-  }
+  if(binCreatePending)return;
+  const initials=inventoryInitials("binCreateInitials");if(!initials)return;
   const make=document.getElementById("binMake").value;
-  const model=document.getElementById("binModel").value;
+  const chosenModel=document.getElementById("binModel").value;
+  const model=chosenModel==="M235 / M235iR"?"F22":chosenModel;
   const system=document.getElementById("binSystem").value;
-  const subsystem=document.getElementById("binSubsystem").value||null;
-  const location=document.getElementById("binLocation").value.trim()||null;
-  const description=document.getElementById("binDescription").value.trim()||null;
-  if(!make||!model||!system){
-    alert("Choose make, model, and system first.");
-    return;
-  }
-  const base=binBaseCode();
-  const code=nextBinCode(base);
-  const payload={
-    bin_code:code,
-    make,
-    make_prefix:BIN_MAKE_PREFIX[make]||"X",
-    model,
-    system,
-    subsystem,
-    location,
+  if(!make||!model||!system){alert("Choose make, chassis and system first.");return;}
+  const base=binSeriesPrefix(model);
+  const automatic=binCodeAutomatic;
+  let code=document.getElementById("binCodePreview").value.trim().toUpperCase();
+  const payload={id:binCreateRequestId||(binCreateRequestId=inventoryOperationId()),make,make_prefix:BIN_MAKE_PREFIX[make]||"X",model,system,
+    subsystem:document.getElementById("binSubsystem").value||null,
+    location:document.getElementById("binLocation").value.trim()||null,
     cart_location:document.getElementById("binCartLocation").value||null,
-    description,
-    label_format:"4x6",
-    qr_value:`OTR:BIN:${code}`,
-    status:"Active"
-  };
-  binCreatePending=true;
+    description:document.getElementById("binDescription").value.trim()||null,
+    label_format:"4x6",status:"Active"};
+  const controls=[...document.querySelectorAll("#binCreate input,#binCreate select,#binCreate textarea,#binCreate button")];
+  binCreatePending=true;controls.forEach(control=>control.disabled=true);
   try{
-    const saved=await insertInventoryBin(payload,initials);
-    inventoryBins.push(saved);
-    inventoryBins.sort((a,b)=>String(a.bin_code||"").localeCompare(String(b.bin_code||"")));
-    currentInventoryBin=saved;
-    await openBinDetail(saved.bin_code,"replace");
-  }catch(error){
-    console.error(error);
-    alert("Unable to confirm the new bin. Refresh the bin registry before creating it again.");
-  }finally{
-    binCreatePending=false;
-  }
+    if(!await loadInventoryBins())throw new Error("The shared bin registry is unavailable. Refresh before creating a bin.");
+    const alreadySaved=inventoryBins.find(bin=>bin.id===payload.id);
+    if(alreadySaved){if(document.getElementById("binCreate").classList.contains("active"))await openBinDetail(alreadySaved.id,"replace");else showPortalNavNotice(`Bin ${alreadySaved.bin_code} was already created.`);return;}
+    if(automatic)code=nextBinCode(base);
+    const suffix=code.startsWith(`${base}-`)?code.slice(base.length+1):"";
+    const match=suffix.match(/^(\d+)(?:-([A-Z]+))?$/);
+    if(!match||!Number.isSafeInteger(Number(match[1]))||Number(match[1])<1)throw new Error(`Use the established format, such as ${base}-023. Bin 000 is reserved for loose stock.`);
+    const canonicalNumber=String(Number(match[1])).padStart(3,"0");
+    code=`${base}-${canonicalNumber}${match[2]?"-"+match[2]:""}`;
+    if(inventoryBins.some(bin=>bin.bin_code.toUpperCase()===code))throw new Error("That Bin ID is already registered. Choose another ID or use the next available number.");
+    if(match[2]){
+      const parent=inventoryBins.find(bin=>bin.bin_code===`${base}-${canonicalNumber}`);
+      if(!parent)throw new Error("Create the numbered parent bin before adding a lettered sub-bin.");
+      payload.parent_bin_id=parent.id;
+    }
+    document.getElementById("binCodePreview").value=code;
+    const saved=await insertInventoryBin({...payload,bin_code:code,qr_value:`OTR:BIN:${code}`},initials,true,automatic);
+    const index=inventoryBins.findIndex(bin=>bin.id===saved.id);if(index>=0)inventoryBins[index]=saved;else inventoryBins.push(saved);
+    inventoryBins.sort(compareInventoryBins);currentInventoryBin=saved;
+    if(document.getElementById("binCreate").classList.contains("active"))await openBinDetail(saved.bin_code,"replace");
+    else showPortalNavNotice(`Bin ${saved.bin_code} created.`);
+  }catch(error){console.error(error);alert(error.message||"The bin save could not be confirmed. Refresh before retrying.");}
+  finally{binCreatePending=false;controls.forEach(control=>control.disabled=false);}
 }
 
 function findInventoryBin(key){

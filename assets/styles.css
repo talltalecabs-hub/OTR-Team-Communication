@@ -569,3 +569,6 @@
       color:var(--muted);
       white-space:nowrap;
     }
+
+.compatibility-options{display:flex;flex-wrap:wrap;gap:10px 18px;margin:8px 0}
+.compatibility-options .checkrow{margin:0;min-height:44px;padding:6px 10px;border:1px solid var(--border);border-radius:10px}
