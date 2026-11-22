@@ -809,7 +809,7 @@
     <div class="hero" style="background:linear-gradient(135deg,rgba(183,255,34,.10),transparent 58%),var(--panel);border-left:8px solid var(--accent);padding:22px">
       <div class="eyebrow">ADMIN ASSISTANT</div>
       <h2 style="font-size:32px;margin:8px 0 7px">Administrative tools</h2>
-      <p>Review team submissions and access future administrative functions.</p>
+      <p>Review team submissions and manage the shared vehicle registry.</p>
       <div class="admin-lock-note"><strong>Beta note:</strong> Admin access is intentionally open for now. Authentication will be added before broader deployment.</div>
     </div>
 
@@ -822,11 +822,30 @@
         <strong>Local Queue</strong>
         <span>Review submissions waiting to sync from this device, export them, or clear the local queue.</span>
       </button>
-      <div class="bigbtn coming-soon" style="cursor:default;opacity:.72">
-        <strong>More Admin Tools</strong>
-        <span>Placeholder for future administrative functions.</span>
-      </div>
+      <button type="button" class="bigbtn live-feature" onclick="openVehicleAdmin()"><strong>Vehicle Registry</strong><span>Add, edit, remove from active choices, or restore vehicles.</span></button>
     </div>
+  </section>
+
+  <section id="adminVehicles" class="screen">
+    <button class="secondary back" type="button" onclick="portalBack('adminAssistant')">← Administrative</button>
+    <h2 class="sectiontitle">Vehicle Registry</h2>
+    <p class="subtitle">Manage the exact vehicles available throughout the portal.</p>
+    <div class="actions"><button id="vehicleAdminNew" class="primary" type="button" onclick="editVehicleAdmin()" disabled>＋ Add Vehicle</button><button class="secondary" type="button" onclick="openVehicleAdmin()">Refresh Registry</button></div>
+    <label for="vehicleAdminSearch">Search vehicles</label><input id="vehicleAdminSearch" type="search" placeholder="Name, number, chassis, status…" oninput="renderVehicleAdminList()" />
+    <label class="checkrow"><input id="vehicleAdminShowRemoved" type="checkbox" onchange="renderVehicleAdminList()" /><span>Include removed vehicles</span></label>
+    <p id="vehicleAdminStatus" class="small" role="status"></p><div id="vehicleAdminList" class="inventory-results"></div>
+  </section>
+  <section id="adminVehicleEdit" class="screen">
+    <button class="secondary back" type="button" onclick="portalBack('adminVehicles')">← Vehicle Registry</button>
+    <h2 id="vehicleAdminEditTitle" class="sectiontitle">Edit Vehicle</h2>
+    <div class="card"><div class="inventory-form-grid">
+      <div><label for="vehicleAdminName">Vehicle name</label><input id="vehicleAdminName" maxlength="120" required /></div>
+      <div><label for="vehicleAdminDesignation">Number / designation</label><input id="vehicleAdminDesignation" maxlength="40" placeholder="69x, Street, Trailer…" /></div>
+      <div><label for="vehicleAdminPlatform">Chassis</label><select id="vehicleAdminPlatform"></select></div>
+      <div><label for="vehicleAdminVehicleStatus">Status</label><input id="vehicleAdminVehicleStatus" maxlength="40" list="vehicleAdminStatuses" /><datalist id="vehicleAdminStatuses"><option>Active</option><option>Street</option><option>In Repair</option><option>Retired</option><option>Deceased</option></datalist></div>
+      <div><label for="vehicleAdminOrder">Display order</label><input id="vehicleAdminOrder" type="number" min="0" max="10000" step="1" /></div>
+      <div><label for="vehicleAdminInitials">Initials</label><input id="vehicleAdminInitials" class="inventory-initials" maxlength="8" autocapitalize="characters" autocomplete="off" required /></div>
+    </div><p id="vehicleAdminEditStatus" role="status" aria-live="polite"></p><div class="actions"><button class="primary" type="button" onclick="saveVehicleAdmin()">Save Vehicle</button><button id="vehicleAdminToggle" class="danger hidden" type="button" onclick="toggleVehicleAdmin()">Save &amp; Remove from Choices</button></div><p class="small">Removing a vehicle hides it from new selections. Earlier reports and inventory history stay linked. Include removed vehicles in the registry to restore one.</p></div>
   </section>
 
   <section id="adminSubmissions" class="screen">
@@ -868,6 +887,7 @@
 <script src="assets/inventory.js?v=1.3.0"></script>
 <script src="assets/labels.js?v=1.3.0"></script>
 <script src="assets/crew.js?v=1.3.0"></script>
+<script src="assets/vehicles.js?v=1.3.0"></script>
 <script src="assets/bootstrap.js?v=1.3.0"></script>
 </body>
 </html>

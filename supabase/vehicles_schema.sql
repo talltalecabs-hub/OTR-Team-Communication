@@ -40,7 +40,7 @@ values
   ('F30-HALF-AND-HALF', 'F30', 'Half and Half 428i', '70 / Street', 'Street', 50),
   ('E92-CHERRY', 'E92', 'Cherry', '64', 'Active', 10),
   ('E92-ACID-TRIP', 'E92', 'Acid Trip', '67', 'Active', 20),
-  ('E92-HULK', 'E92', 'Hulk', '63', 'Deceased', 30),
+  ('E92-HULK', 'E92', 'Phoenix', '69x', 'Active', 30),
   ('E92-HIGH-BOI', 'E92', 'High Boi', 'Street', 'Street', 40),
   ('E92-PRINCE', 'E92', 'Prince', '69', 'Active', 50),
   ('M235-RAPTOR', 'M235 / M235iR', 'Raptor', '62', 'Active', 10),
