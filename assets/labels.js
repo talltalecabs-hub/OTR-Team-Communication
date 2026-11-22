@@ -543,6 +543,7 @@ async function openBinBrowser(model="ALL",cart="ALL"){
 }
 
 function inventoryBinDisplayName(bin){
+  if(bin.name)return bin.name;
   if(isLooseInventoryBin(bin)) return "Loose / bulky items";
   return bin.name||bin.description||[bin.system,bin.subsystem].filter(Boolean).join(" / ")||"Unnamed bin";
 }
@@ -636,7 +637,7 @@ async function openBinDetail(key,historyMode="push"){
         <button class="secondary" type="button" onclick="openAssignPartToBin('${escapeHtml(String(bin.bin_code)).replace(/'/g,"&#39;")}')">Fast Move / Placement Here</button>
       </div></details>
     </div>
-    ${children.length?`<h3 style="margin:22px 0 10px">Sub-bins</h3><div class="inventory-results">${children.map(child=>`<button type="button" class="inventory-card" onclick="openBinDetail('${escapeHtml(child.bin_code)}')"><strong>${escapeHtml(child.bin_code)}</strong><div class="meta">${escapeHtml(child.description||child.system)} • ${itemsForBin(child).length} direct records • ${escapeHtml(binCartLocationLabel(child))}</div></button>`).join("")}</div>`:""}
+    ${children.length?`<h3 style="margin:22px 0 10px">Sub-bins</h3><div class="inventory-results">${children.map(child=>`<button type="button" class="inventory-card" onclick="openBinDetail('${escapeHtml(child.bin_code)}')"><strong>${escapeHtml(child.bin_code)}</strong><div class="meta">${escapeHtml(inventoryBinDisplayName(child))} • ${itemsForBin(child).length} direct records • ${escapeHtml(binCartLocationLabel(child))}</div></button>`).join("")}</div>`:""}
     <h3 style="margin:22px 0 10px">Contents</h3>
     <label for="binContentsSearch">Search this bin</label>
     <input id="binContentsSearch" class="inventory-search" type="search" placeholder="Search this bin's parts, part numbers, notes…" oninput="renderBinContents()" />
