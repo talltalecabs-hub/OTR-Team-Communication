@@ -96,7 +96,7 @@ async function submitOperationalForm(){
   }
 
   if(def.vehicleField){
-    const selected=vehicleRegistry.find(vehicle=>vehicle.vehicle_code===values[def.vehicleField]);
+    const selected=vehicleRegistry.find(vehicle=>vehicle.is_active!==false&&vehicle.vehicle_code===values[def.vehicleField]);
     if(selected){
       values.vehicle_name=selected.vehicle_name;
       values.vehicle_label=vehicleDisplayLabel(selected);

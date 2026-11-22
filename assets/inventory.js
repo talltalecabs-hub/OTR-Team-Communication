@@ -111,11 +111,55 @@ function setInventoryFilters(){
   updateInventoryBrowseTitle();
   renderInventoryResults();
 }
-function inventoryMatchesPlatform(item){
-  return (inventoryFilter==="ALL" || item.platform===inventoryFilter) &&
-    (inventoryStockCategory==="ALL" || inventoryStockCategoryLabel(item)===inventoryStockCategory) &&
-    (inventoryCartFilter==="ALL" || inventoryItemLocationLabel(item)===inventoryCartFilter);
+function canonicalInventoryChassis(platform){
+  return platform==="M235 / M235iR"?"F22":String(platform||"").trim();
 }
+function inventoryCompatibleChassis(item){
+  return [...new Set([item.platform,...(Array.isArray(item.compatibility)?item.compatibility:[])].map(canonicalInventoryChassis).filter(Boolean))];
+}
+function renderInventoryCompatibility(prefix,primary,values=[]){
+  const wrap=document.getElementById(`${prefix}CompatibleChassis`);if(!wrap)return;
+  const canonical=canonicalInventoryChassis(primary);
+  const chosen=new Set([canonical,...values.map(canonicalInventoryChassis)].filter(Boolean));
+  const options=[...new Set(["E92","F22","F30","986 Boxster","E46","Non-Race","Tow","Trailer",...chosen])];
+  wrap.dataset.primary=canonical;
+  wrap.innerHTML=options.map(chassis=>`<label class="checkrow"><input type="checkbox" value="${escapeHtml(chassis)}" ${chosen.has(chassis)?"checked":""} ${chassis===canonical?"disabled":""} /><span>${escapeHtml(chassis)}</span></label>`).join("");
+}
+function selectedInventoryCompatibility(prefix,primary){
+  const chosen=[...document.querySelectorAll(`#${prefix}CompatibleChassis input:checked`)].map(input=>input.value);
+  return [...new Set([canonicalInventoryChassis(primary),...chosen.map(canonicalInventoryChassis)].filter(Boolean))];
+}
+function changeAddInventoryPlatform(){
+  const wrap=document.getElementById("addCompatibleChassis");
+  const previous=wrap?.dataset.primary;
+  const extra=[...document.querySelectorAll("#addCompatibleChassis input:checked")].map(input=>input.value).filter(value=>value!==previous);
+  setupInventoryPlacement("add");
+  renderInventoryCompatibility("add",document.getElementById("addPlatform").value,extra);
+}
+async function saveInventoryCompatibility(){
+  if(inventoryPatchPending||!document.getElementById("inventoryDetail").classList.contains("active"))return;
+  const item=inventoryDetailDisplayedItem();if(!item)return;
+  const initials=inventoryInitials("inventoryDetailInitials");if(!initials)return;
+  const compatibility=selectedInventoryCompatibility("detail",item.platform);
+  const renderId=inventoryDetailRenderId;
+  const controls=[...document.querySelectorAll("#detailCompatibleChassis input,#saveInventoryCompatibility,#inventoryDetailInitials")].map(input=>[input,input.disabled]);
+  controls.forEach(([input])=>input.disabled=true);
+  try{
+    const saved=await persistInventoryPatch(item,{compatibility},initials);if(!saved)return;
+    applyInventoryCachedPatch(item,{compatibility});renderInventoryResults();
+    if(renderId===inventoryDetailRenderId&&document.getElementById("inventoryDetail").classList.contains("active")){
+      document.getElementById("inventoryDetailInitials").value="";
+      document.getElementById("inventoryDetailNoteStatus").textContent="Compatible chassis saved. Stock quantity and physical location are unchanged.";
+    }
+  }finally{controls.forEach(([input,disabled])=>input.disabled=disabled);}
+}
+
+function inventoryMatchesPlatform(item){
+  return (inventoryFilter==="ALL"||inventoryCompatibleChassis(item).includes(canonicalInventoryChassis(inventoryFilter)))&&
+    (inventoryStockCategory==="ALL"||inventoryStockCategoryLabel(item)===inventoryStockCategory)&&
+    (inventoryCartFilter==="ALL"||inventoryItemLocationLabel(item)===inventoryCartFilter);
+}
+
 async function changeInventoryStockCategory(category){
   const item=currentInventoryItem;
   if(!item || !["Mobile","Backstock"].includes(category)) return;
@@ -169,6 +213,7 @@ function renderInventoryResults(){
     return `<button type="button" class="inventory-card" onclick="openInventoryDetail('${escapeHtml(String(item.local_key)).replace(/'/g,"&#39;")}')">
       <strong>${escapeHtml(item.item_name||"Unnamed item")}</strong>
       <div class="meta">${escapeHtml(item.platform||"Unassigned platform")} • ${escapeHtml(item.category||"Uncategorized")}</div>
+      ${inventoryCompatibleChassis(item).length>1?`<div class="meta">Fits ${escapeHtml(inventoryCompatibleChassis(item).join(" / "))}</div>`:""}
       <div class="meta"><span class="qty">Qty ${escapeHtml(inventoryQuantityLabel(item))}</span></div>
       <div class="meta inventory-card-bin">📍 ${escapeHtml(inventoryItemLocationLabel(item))} • BIN <span class="label-mono">${escapeHtml(inventoryItemBinDisplayLabel(item))}</span></div>
       <div class="meta" style="margin-top:9px">${invBadge(item.verification_status)} <span class="inv-badge direct">${escapeHtml(inventoryStockCategoryLabel(item))}</span> ${direct}</div>
@@ -178,7 +223,7 @@ function renderInventoryResults(){
 function findInventoryItem(key){
   return inventoryData.find(x=>String(x.local_key)===String(key));
 }
-function openInventoryDetail(key,historyMode="push"){
+function openInventoryDetail(key,historyMode="push",justAdded=false){
   const item=findInventoryItem(key);
   if(!item) return;
   currentInventoryItem=item;
@@ -188,6 +233,7 @@ function openInventoryDetail(key,historyMode="push"){
   const direct=assignment==="Specific Vehicle"&&item.assigned_vehicle ? `<span class="inv-badge direct">DIRECT SPARE • ${escapeHtml(item.assigned_vehicle)}</span>`:"";
   const imported=(item.verification_status||"Imported")==="Imported";
   wrap.innerHTML=`
+    ${justAdded?'<div class="card" style="margin-bottom:18px"><p role="status"><strong>Part added to shared inventory.</strong></p><button id="addAnotherPartButton" class="primary" type="button" onclick="openAddInventory()">Add Another Part</button></div>':""}
     <h2 class="sectiontitle">${escapeHtml(item.item_name||"Inventory Item")}</h2>
     <div id="inventoryDetailStatus" class="inventory-statusbar">${invBadge(item.verification_status)} <span class="inv-badge direct">${escapeHtml(inventoryStockCategoryLabel(item))}</span> ${direct}</div>
     <div class="card">
@@ -209,13 +255,17 @@ function openInventoryDetail(key,historyMode="push"){
         <button class="secondary" type="button" onclick="openInventoryItemManagement()">Inventory Management</button>
         <button id="inventoryDetailNotFound" class="danger" type="button" onclick="markInventoryNotFound('inventoryDetailInitials')">Not Found</button>
       </div>
+      <h3>Compatible chassis</h3><div id="detailCompatibleChassis" class="compatibility-options"></div>
+      <p class="small">One stock record and one quantity, available under every checked chassis. Cart and bin stay unchanged.</p>
+      <button id="saveInventoryCompatibility" class="secondary" type="button" onclick="saveInventoryCompatibility()">Save Compatible Chassis</button>
       <label for="inventoryDetailNotes">Notes</label>
       <textarea id="inventoryDetailNotes" data-inventory-key="${escapeHtml(String(item.local_key))}" rows="4" placeholder="Part condition, fitment, or crew notes...">${escapeHtml(item.notes||"")}</textarea>
       <label for="inventoryDetailInitials">Initials</label>
-      <input id="inventoryDetailInitials" class="inventory-initials" type="text" maxlength="8" autocapitalize="characters" autocomplete="off" required placeholder="Required for Notes or Not Found" />
+      <input id="inventoryDetailInitials" class="inventory-initials" type="text" maxlength="8" autocapitalize="characters" autocomplete="off" required placeholder="Required for Notes, compatibility or Not Found" />
       <div class="actions"><button id="inventoryDetailSaveNotes" class="secondary" type="button" onclick="saveInventoryNotes()">Save Notes</button></div>
       <p id="inventoryDetailNoteStatus" class="small" role="status" aria-live="polite"></p>
     </div>`;
+  renderInventoryCompatibility("detail",item.platform,inventoryCompatibleChassis(item));
   showScreen("inventoryDetail",{historyMode});
 }
 function inventoryDetailDisplayedItem(){
@@ -305,7 +355,6 @@ function openInventoryItemManagement(historyMode="push"){
         <button class="secondary" type="button" onclick="changeInventoryStockCategory('${inventoryStockCategoryLabel(item)==="Mobile"?"Backstock":"Mobile"}')">Move to ${inventoryStockCategoryLabel(item)==="Mobile"?"Backstock":"Mobile"}</button>
         <button class="secondary" type="button" onclick="markInventoryNeedsReview()">Needs Review</button>
         <button class="danger" type="button" onclick="markInventoryNotFound()">Not Found</button>
-        <button class="secondary" type="button" onclick="copyInventoryToWorkspace()">Duplicate to Workspace</button>
         <button class="secondary" type="button" onclick="openPartTag('${escapeHtml(String(item.local_key)).replace(/'/g,"&#39;")}')">Print Part Tag</button>
       </div>
       <p class="small">Enter initials here for flag and stock-category changes. Placement, count, and tag changes ask for initials on their own screen.</p>
@@ -442,8 +491,10 @@ async function openLegacyAddInventory(){
   document.getElementById("addAssignment").value="General Inventory";
   document.getElementById("addLocation").value="Unassigned";
   setupInventoryPlacement("add");
+  renderInventoryCompatibility("add",document.getElementById("addPlatform").value);
   toggleAddAssignedVehicle();
   showScreen("inventoryAdd");
+  document.getElementById("addItemName").focus();
 }
 function newInventoryCode(platform){
   const prefix=(platform||"GEN").toUpperCase().replace(/[^A-Z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,12)||"GEN";
@@ -493,7 +544,7 @@ async function addInventoryItem(){
       : null,
     use_case:document.getElementById("addNotes").value.trim()||null,
     tag_id:null,
-    compatibility:[platform],
+    compatibility:selectedInventoryCompatibility("add",platform),
     verified_at:new Date().toISOString(),
     created_at:new Date().toISOString()
   };
@@ -527,7 +578,7 @@ async function addInventoryItem(){
     document.getElementById("inventoryPlatformFilter").value="ALL";
     updateInventoryBrowseTitle();
     renderInventoryResults();
-    openInventoryDetail(liveItem.local_key,"replace");
+    openInventoryDetail(liveItem.local_key,"replace",true);
   }catch(err){
     console.error(err);
     alert("Unable to confirm the new shared inventory record. Refresh inventory before adding it again.");

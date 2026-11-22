@@ -1,3 +1,3 @@
-const APP_VERSION="1.3.0";
+const APP_VERSION="1.3.3";
 const SUPABASE_URL="https://dsikfwheepvwerswmfmr.supabase.co";
 const SUPABASE_KEY="sb_publishable_rSZ1cCRX8s4PHOqxQbNoow_qspBNY6z";

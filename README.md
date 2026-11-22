@@ -4,9 +4,15 @@ Trackside-friendly team feedback, post-event reporting, administration, and shar
 
 ## Current release
 
-V1.3.0 uses GitHub Pages, with Supabase authoritative for shared submissions, inventory, and the exact vehicle registry. Mobile inventory travels with the team; Backstock stays at the shop. Each race chassis has independent Cart A/B locations. Failed submissions stay in a device-local queue and retry when connectivity returns. Current counts change as the crew works; the historical seed is not the live inventory count.
+V1.3.3 uses GitHub Pages, with Supabase authoritative for shared submissions, inventory, and the exact vehicle registry. Mobile inventory travels with the team; Backstock stays at the shop. Each race chassis has independent Cart A/B locations. Failed submissions stay in a device-local queue and retry when connectivity returns. Current counts change as the crew works; the historical seed is not the live inventory count.
 
 V1.3.0 adds a search-first crew workflow, atomic Use Part consumption, required initials for inventory changes, and an append-only activity ledger. It also includes the later bin/part refinement: searchable bin contents, direct Not Found and editable notes on part detail, and single-face 2×1 part labels. See [Inventory crew workflow](docs/inventory-crew-workflow.md) and [Bin, part, and label UX](docs/bin-part-label-ux.md) for behavior, local checks, and release requirements.
+
+V1.3.1 adds an **Add Another Part** button after a successful inventory addition. It opens a clean entry and focuses the part name without creating another stock record. No database change is needed.
+
+V1.3.2 continues chassis Bin IDs such as **E92-023**, with an editable suggested ID, and adds multi-chassis compatibility on new and existing parts. A shared F22/F30 part remains one stock record with one quantity and its existing physical location. See [Bin numbering and shared parts](docs/chassis-bins-and-shared-parts.md).
+
+V1.3.3 adds **Administrative → Vehicle Registry** for shared add/edit/remove/restore actions with initials and change history. Phoenix #69x is the displayed replacement for Hulk; stable vehicle links are retained. See [Vehicle administration](docs/vehicle-administration.md).
 
 ## Project structure
 
