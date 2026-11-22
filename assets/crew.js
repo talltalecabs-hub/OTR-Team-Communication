@@ -39,9 +39,7 @@ function crewVehicleLabel(vehicle){
 }
 
 function compatibleUseVehicle(vehicle,item){
-  const aliases={F22:"M235 / M235iR","M235 / M235iR":"M235 / M235iR"};
-  const platforms=[item.platform,...(Array.isArray(item.compatibility)?item.compatibility:[])].map(platform=>aliases[platform]||platform);
-  return platforms.includes(vehicle.platform)||vehicle.vehicle_code===item.assigned_vehicle_code;
+  return inventoryCompatibleChassis(item).includes(canonicalInventoryChassis(vehicle.platform))||vehicle.vehicle_code===item.assigned_vehicle_code;
 }
 
 function renderUsePartVehicleOptions(){
