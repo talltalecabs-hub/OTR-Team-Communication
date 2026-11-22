@@ -1,5 +1,5 @@
 // ----- Inventory Label & Bin Assistant V1 -----
-// Bin labels use 4x6 stock; individual part labels use one 2x1 face.
+// Part and bin labels support three explicit media presets.
 
 const BIN_MAKE_PREFIX={
   BMW:"B",
@@ -156,7 +156,7 @@ function refreshInventoryPlacementBins(prefix,selectedBin=null){
   const previous=selectedBin??select.value;
   const platform=inventoryPlacementPlatform(prefix);
   const location=document.getElementById(prefix+"Location").value;
-  const bins=inventoryBins.filter(bin=>bin.model===platform && ((selectedBin && bin.id===selectedBin) || isLooseInventoryBin(bin) || (location==="Backstock" ? !bin.cart_location : binCartLocationLabel(bin)===location)));
+  const bins=inventoryBins.filter(bin=>bin.status!=="Archived"&&bin.model===platform && ((selectedBin && bin.id===selectedBin) || isLooseInventoryBin(bin) || (location==="Backstock" ? !bin.cart_location : binCartLocationLabel(bin)===location)));
   select.innerHTML='<option value="">Unassigned bin</option>'+bins.map(bin=>`<option value="${escapeHtml(bin.id)}">${escapeHtml(bin.bin_code)}${isLooseInventoryBin(bin)?" — Loose / bulky items":""}</option>`).join("");
   select.value=bins.some(bin=>bin.id===previous)?previous:"";
 }
@@ -185,7 +185,7 @@ function inventoryPlacementPatch(prefix){
 
 async function saveBinCartLocation(){
   const bin=currentInventoryBin;
-  if(!bin || binCartSavePending || isLooseInventoryBin(bin)) return;
+  if(!bin || binCartSavePending || isLooseInventoryBin(bin) || bin.parent_bin_id) return;
   const initials=inventoryInitials("binCartInitials");
   if(!initials) return;
   const cart=document.getElementById("binCartLocationSelect").value;
@@ -201,8 +201,9 @@ async function saveBinCartLocation(){
     const rows=await response.json();
     if(!rows?.[0]) throw new Error("No bin was updated");
     Object.assign(bin,rows[0]);
-    renderInventoryResults();
-    await openBinDetail(bin.bin_code,"replace");
+    await loadInventoryBins();renderInventoryResults();
+    if(currentInventoryBin?.id===bin.id&&document.getElementById("binDetail").classList.contains("active"))await openBinDetail(bin.bin_code,"replace");
+    else showPortalNavNotice("Bin and sub-bin cart assignments saved.");
   }catch(error){
     console.error(error);
     alert("Unable to save this bin's cart location. Please retry.");
@@ -559,6 +560,7 @@ function renderBinResults(){
   const selectedModel=document.getElementById("binChassisFilter").value;
   document.getElementById("binBrowseTitle").textContent=`${selectedModel==="ALL"?"All Chassis":selectedModel} — Open Bins`;
   const rows=inventoryBins.filter(bin=>{
+    if(bin.status==="Archived")return false;
     const model=document.getElementById("binChassisFilter").value;
     const cart=document.getElementById("binCartFilter").value;
     if(model!=="ALL" && bin.model!==model) return false;
@@ -592,11 +594,15 @@ async function openBinDetail(key,historyMode="push"){
   const bin=findInventoryBin(key);
   if(!bin) return;
   currentInventoryBin=bin;
+  if(bin.status==="Archived"){
+    document.getElementById("binDetailWrap").innerHTML=`<h2 class="sectiontitle">${escapeHtml(bin.bin_code)} — Deleted</h2><p>This physical bin is no longer available. Its stock was moved when the bin was removed.</p><button class="secondary" type="button" onclick="openInventoryEventHistory()">Inventory Activity</button>`;
+    showScreen("binDetail",{historyMode});return;
+  }
   if(!inventoryBackendReady) await loadInventory();
   const wrap=document.getElementById("binDetailWrap");
   const items=itemsForBin(bin);
   const parent=bin.parent_bin_id ? findInventoryBin(bin.parent_bin_id) : null;
-  const children=inventoryBins.filter(child=>child.parent_bin_id===bin.id);
+  const children=inventoryBins.filter(child=>child.status!=="Archived"&&child.parent_bin_id===bin.id);
   wrap.innerHTML=`
     <div class="bin-heading-row">
       <div>
@@ -616,13 +622,16 @@ async function openBinDetail(key,historyMode="push"){
       ${parent?`<p>Parent bin: <button class="secondary" type="button" onclick="openBinDetail('${escapeHtml(parent.bin_code)}')">${escapeHtml(parent.bin_code)}</button></p>`:""}
       ${bin.description?`<p><strong>Notes:</strong> ${escapeHtml(bin.description)}</p>`:""}
       <details id="binManagementControls"><summary>Bin Management</summary>
+      <label for="binDisplayName">Bin Name</label><input id="binDisplayName" maxlength="120" value="${escapeHtml(inventoryBinDisplayName(bin))}" />
+      <button id="binNameSave" class="secondary" type="button" onclick="saveInventoryBinName()">Save Bin Name</button><p id="binNameStatus" class="small" role="status"></p>
       <label for="binCartLocationSelect">Assign this ${escapeHtml(bin.model)} bin to a cart</label>
-      <select id="binCartLocationSelect" ${isLooseInventoryBin(bin)?"disabled":""}><option value="">Unassigned</option><option value="A" ${bin.cart_location==="A"?"selected":""}>${escapeHtml(CART_CHASSIS_CODES[bin.model]||bin.model)}-A</option><option value="B" ${bin.cart_location==="B"?"selected":""}>${escapeHtml(CART_CHASSIS_CODES[bin.model]||bin.model)}-B</option></select>
-      <p class="small">${isLooseInventoryBin(bin)?"Loose items use this Bin ID on either cart. Assign their locations on each part.":"Sub-bins keep their own locations when this bin is reassigned."}</p>
+      <select id="binCartLocationSelect" ${isLooseInventoryBin(bin)||bin.parent_bin_id?"disabled":""}><option value="">Unassigned</option><option value="A" ${bin.cart_location==="A"?"selected":""}>${escapeHtml(CART_CHASSIS_CODES[bin.model]||bin.model)}-A</option><option value="B" ${bin.cart_location==="B"?"selected":""}>${escapeHtml(CART_CHASSIS_CODES[bin.model]||bin.model)}-B</option></select>
+      <p class="small">${isLooseInventoryBin(bin)?"Loose items use this Bin ID on either cart. Assign their locations on each part.":bin.parent_bin_id?"This sub-bin follows its parent cart. Open the parent bin to change its cart.":"All sub-bins follow this bin when its cart changes."}</p>
       <label for="binCartInitials">Initials</label>
-      <input id="binCartInitials" class="inventory-initials" type="text" maxlength="8" autocapitalize="characters" autocomplete="off" required placeholder="Required to save a cart change" />
+      <input id="binCartInitials" class="inventory-initials" type="text" maxlength="8" autocapitalize="characters" autocomplete="off" required placeholder="Required to save bin changes" />
       <div class="actions">
-        <button class="primary" type="button" onclick="saveBinCartLocation()" ${isLooseInventoryBin(bin)?"disabled":""}>Save Cart Location</button>
+        ${!isLooseInventoryBin(bin)?'<button class="danger" type="button" onclick="openDeleteInventoryBin()">Delete Bin…</button>':""}
+        <button class="primary" type="button" onclick="saveBinCartLocation()" ${isLooseInventoryBin(bin)||bin.parent_bin_id?"disabled":""}>Save Cart Location</button>
         <button class="primary" type="button" onclick="openBinLabel('${escapeHtml(String(bin.bin_code)).replace(/'/g,"&#39;")}')">Print 4×6 Bin Label</button>
         <button class="secondary" type="button" onclick="openAssignPartToBin('${escapeHtml(String(bin.bin_code)).replace(/'/g,"&#39;")}')">Fast Move / Placement Here</button>
       </div></details>
@@ -677,6 +686,7 @@ function refreshFastMoveBins(selected=null){
   const select=document.getElementById("assignBinSelect");
   const previous=selected??select.value;
   const bins=inventoryBins.filter(bin=>{
+    if(bin.status==="Archived")return false;
     // A blank Backstock chassis can keep the source platform without a bin.
     // Choosing a physical bin requires its chassis to be explicit too.
     if(!chassis || bin.model!==chassis) return false;
@@ -951,20 +961,41 @@ function labelScanBlock(value){
   return `<div class="label-scan-block">${code39Svg(data)}<div class="label-scan-id">${escapeHtml(data)}</div></div>`;
 }
 
-function partFaceHtml(item){
+const LABEL_MEDIA={
+  inch4x6:{name:"4×6 in",width:"4in",height:"6in",page:"otr-bin",small:false},
+  metric25x50:{name:"25×50 mm",width:"50mm",height:"25mm",page:"otr-small",small:true},
+  metric150x100:{name:"150×100 mm",width:"150mm",height:"100mm",page:"otr-metric",small:false}
+};
+function labelMediaFor(payload){
+  if(LABEL_MEDIA[payload.media_id]) return payload.media_id;
+  return payload.type==="bin"?"inch4x6":"metric25x50";
+}
+function changeLabelMedia(value){
+  if(!currentLabelPayload || !LABEL_MEDIA[value]) return;
+  currentLabelPayload.media_id=value;
+  renderLabelPreview();
+}
+
+function partFaceHtml(item,large=false){
   // Uppercase presentation only. Stored inventory/tag/source identity is untouched.
   const upper=value=>labelSafeText(value).toUpperCase();
   const code=item.tag_id||stablePartTagId(item);
   const bin=inventoryItemBinDisplayLabel(item);
   const placement=`${inventoryItemLocationLabel(item)} • ${bin}`;
   const name=upper(item.item_name||"Inventory Item");
-  const size=name.length>50?"7pt":name.length>32?"8pt":"9pt";
-  return `<div class="part-tag-face" data-tag-id="${escapeHtml(code)}">
-    <div class="part-tag-brand">OTR PART</div>
+  const size=large?(name.length>50?"22pt":name.length>32?"26pt":"32pt"):(name.length>50?"7pt":name.length>32?"8pt":"9pt");
+  const compactQr=!large&&code.length>18;
+  let scan;
+  if(compactQr){
+    const qr=qrcode(0,'M');qr.addData(code);qr.make();
+    scan=`<div class="part-tag-qr" data-scan-value="${escapeHtml(code)}">${qr.createSvgTag({cellSize:1,margin:4,scalable:true})}<div class="label-scan-id">${escapeHtml(code.slice(-8))}</div></div>`;
+  }else scan=`<div class="label-scan-block">${code39Svg(code)}${code.length<=24?`<div class="label-scan-id">${escapeHtml(upper(code))}</div>`:""}</div>`;
+  return `<div class="part-tag-face ${compactQr?'has-qr':''}" data-tag-id="${escapeHtml(code)}">
+    <div class="part-tag-brand">${item.workspace_draft?"DRAFT • OTR PART":"OTR PART"}</div>
     <div class="part-tag-name" style="font-size:${size}">${escapeHtml(name)}</div>
     <div class="part-tag-location">${escapeHtml(upper(placement))}</div>
     <div class="part-tag-quantity">QTY ${escapeHtml(upper(inventoryQuantityLabel(item)))}</div>
-    <div class="label-scan-block">${code39Svg(code)}${code.length<=24?`<div class="label-scan-id">${escapeHtml(upper(code))}</div>`:""}</div>
+    ${scan}
   </div>`;
 }
 
@@ -974,7 +1005,7 @@ function binLabelHtml(bin){
     <div class="bin-label-brand">OPEN THROTTLE RACING</div>
     <div class="bin-label-id">${escapeHtml(bin.bin_code)}</div>
     <div class="bin-label-class">${escapeHtml(bin.make)} • ${escapeHtml(bin.model)}</div>
-    <div class="bin-label-system">${escapeHtml(bin.system)}${bin.subsystem?` / ${escapeHtml(bin.subsystem)}`:""}</div>
+    <div class="bin-label-system">${escapeHtml(bin.name||bin.system)}${!bin.name&&bin.subsystem?` / ${escapeHtml(bin.subsystem)}`:""}</div>
     <div class="bin-label-location">${escapeHtml(binCartLocationLabel(bin))}</div>
     ${bin.description?`<div class="bin-label-note">${escapeHtml(bin.description)}</div>`:""}
     ${labelScanBlock(code)}
@@ -985,19 +1016,27 @@ function renderLabelPreview(){
   const wrap=document.getElementById("labelPrintCanvas");
   const note=document.getElementById("labelPrintNote");
   const button=document.getElementById("labelPrintButton");
+  const select=document.getElementById("labelMediaSelect");
   if(!wrap||!currentLabelPayload) return;
   const part=currentLabelPayload.type==="part";
+  const mediaId=labelMediaFor(currentLabelPayload);
+  const media=LABEL_MEDIA[mediaId];
+  currentLabelPayload.media_id=mediaId;
+  document.body.dataset.labelMedia=mediaId;
+  document.body.style.setProperty("--label-width",media.width);
+  document.body.style.setProperty("--label-height",media.height);
   document.body.classList.toggle("print-part-label",part);
   wrap.classList.toggle("part-label-canvas",part);
-  if(!part){
-    wrap.innerHTML=binLabelHtml(currentLabelPayload.bin);
-    if(note) note.textContent="4×6 bin label • browser print preview";
-    if(button) button.textContent="Print 4×6 Bin Label";
-  }else{
-    wrap.innerHTML=partFaceHtml(currentLabelPayload.item);
-    if(note) note.textContent="Single 2×1 part label • placeholder barcode";
-    if(button) button.textContent="Print 2×1 Part Label";
+  wrap.classList.toggle("small-label-canvas",media.small);
+  wrap.classList.toggle("large-label-canvas",!media.small);
+  wrap.classList.toggle("metric-label-canvas",mediaId==="metric150x100");
+  if(select){
+    select.innerHTML=Object.entries(LABEL_MEDIA).map(([id,profile])=>`<option value="${id}">${profile.name}${id==="metric25x50"?" — 50 mm wide × 25 mm high":""}</option>`).join("");
+    select.value=mediaId;
   }
+  wrap.innerHTML=part?partFaceHtml(currentLabelPayload.item,!media.small):binLabelHtml(currentLabelPayload.bin);
+  if(note) note.textContent=`${media.name} ${part?"part":"bin"} label • ${media.width} wide × ${media.height} high`;
+  if(button) button.textContent=`Print ${media.name} Label`;
 }
 
 function printCurrentLabel(){

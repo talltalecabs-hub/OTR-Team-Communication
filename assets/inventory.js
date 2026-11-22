@@ -1,5 +1,6 @@
 // ----- Inventory Assistant V1 — Supabase authoritative -----
 let inventoryData = [];
+let inventoryTagAliases=new Map();
 let inventoryFilter = "ALL";
 let inventoryStockCategory = "Mobile";
 let inventoryCartFilter = "ALL";
@@ -7,6 +8,7 @@ let currentInventoryItem = null;
 let inventoryBackendReady = false;
 let inventoryPatchPending=false;
 let inventoryAddPending=false;
+let inventoryLegacyPending=null;
 let inventoryNotesPending=false;
 let inventoryDetailRenderId=0;
 
@@ -60,7 +62,7 @@ async function loadInventory(){
     return;
   }
 
-  await Promise.all([loadInventoryBins(),loadInventoryCarts()]);
+  await Promise.all([loadInventoryBins(),loadInventoryCarts(),loadInventoryTagAliases()]);
   populateInventoryCartFilter();
   const cartFilter=document.getElementById("inventoryCartSelect");
   cartFilter.disabled=!inventoryBinsReady||!inventoryCartsReady;
@@ -190,7 +192,7 @@ function invBadge(status){
 function inventoryMatchesSearch(item,query){
   const bin=item.inventory_bin_id?findInventoryBin(item.inventory_bin_id):null;
   const hay=[item.item_name,item.platform,item.location,item.category,item.condition,item.status,
-    item.part_number,item.assigned_vehicle,item.use_case,item.tag_id,item.inventory_code,
+    item.part_number,item.assigned_vehicle,item.use_case,item.tag_id,item.inventory_code,...(inventoryTagAliases.get(item.id)||[]),
     inventoryStockCategoryLabel(item),inventoryItemLocationLabel(item),inventoryItemBinDisplayLabel(item),
     bin?.description,bin?.system,...(Array.isArray(item.compatibility)?item.compatibility:[])]
     .filter(Boolean).join(" ").toLowerCase();
@@ -221,7 +223,7 @@ function renderInventoryResults(){
   }).join("");
 }
 function findInventoryItem(key){
-  return inventoryData.find(x=>String(x.local_key)===String(key));
+  return inventoryData.find(x=>String(x.local_key)===String(key)||x.id===key||x.tag_id===key||(inventoryTagAliases.get(x.id)||[]).includes(String(key)));
 }
 function openInventoryDetail(key,historyMode="push",justAdded=false){
   const item=findInventoryItem(key);
@@ -233,7 +235,7 @@ function openInventoryDetail(key,historyMode="push",justAdded=false){
   const direct=assignment==="Specific Vehicle"&&item.assigned_vehicle ? `<span class="inv-badge direct">DIRECT SPARE • ${escapeHtml(item.assigned_vehicle)}</span>`:"";
   const imported=(item.verification_status||"Imported")==="Imported";
   wrap.innerHTML=`
-    ${justAdded?'<div class="card" style="margin-bottom:18px"><p role="status"><strong>Part added to shared inventory.</strong></p><button id="addAnotherPartButton" class="primary" type="button" onclick="openAddInventory()">Add Another Part</button></div>':""}
+    ${justAdded?'<div class="card" style="margin-bottom:18px"><p role="status"><strong>Inventory saved to the shared database.</strong></p><button id="addAnotherPartButton" class="primary" type="button" onclick="openLegacyAddInventory()">Add Another Part</button></div>':""}
     <h2 class="sectiontitle">${escapeHtml(item.item_name||"Inventory Item")}</h2>
     <div id="inventoryDetailStatus" class="inventory-statusbar">${invBadge(item.verification_status)} <span class="inv-badge direct">${escapeHtml(inventoryStockCategoryLabel(item))}</span> ${direct}</div>
     <div class="card">
@@ -255,17 +257,20 @@ function openInventoryDetail(key,historyMode="push",justAdded=false){
         <button class="secondary" type="button" onclick="openInventoryItemManagement()">Inventory Management</button>
         <button id="inventoryDetailNotFound" class="danger" type="button" onclick="markInventoryNotFound('inventoryDetailInitials')">Not Found</button>
       </div>
+      <label for="inventoryDetailName">Part Name</label><input id="inventoryDetailName" maxlength="200" value="${escapeHtml(item.item_name||'')}" />
+      <button id="inventoryNameSave" class="secondary" type="button" onclick="saveInventoryPartName()">Save Part Name</button><p id="inventoryNameStatus" class="small" role="status"></p>
       <h3>Compatible chassis</h3><div id="detailCompatibleChassis" class="compatibility-options"></div>
       <p class="small">One stock record and one quantity, available under every checked chassis. Cart and bin stay unchanged.</p>
       <button id="saveInventoryCompatibility" class="secondary" type="button" onclick="saveInventoryCompatibility()">Save Compatible Chassis</button>
       <label for="inventoryDetailNotes">Notes</label>
       <textarea id="inventoryDetailNotes" data-inventory-key="${escapeHtml(String(item.local_key))}" rows="4" placeholder="Part condition, fitment, or crew notes...">${escapeHtml(item.notes||"")}</textarea>
       <label for="inventoryDetailInitials">Initials</label>
-      <input id="inventoryDetailInitials" class="inventory-initials" type="text" maxlength="8" autocapitalize="characters" autocomplete="off" required placeholder="Required for Notes, compatibility or Not Found" />
+      <input id="inventoryDetailInitials" class="inventory-initials" type="text" maxlength="8" autocapitalize="characters" autocomplete="off" required placeholder="Required for name, Notes, compatibility or Not Found" />
       <div class="actions"><button id="inventoryDetailSaveNotes" class="secondary" type="button" onclick="saveInventoryNotes()">Save Notes</button></div>
       <p id="inventoryDetailNoteStatus" class="small" role="status" aria-live="polite"></p>
     </div>`;
   renderInventoryCompatibility("detail",item.platform,inventoryCompatibleChassis(item));
+  prepareInventoryNameEditor(item);
   showScreen("inventoryDetail",{historyMode});
 }
 function inventoryDetailDisplayedItem(){
@@ -355,6 +360,7 @@ function openInventoryItemManagement(historyMode="push"){
         <button class="secondary" type="button" onclick="changeInventoryStockCategory('${inventoryStockCategoryLabel(item)==="Mobile"?"Backstock":"Mobile"}')">Move to ${inventoryStockCategoryLabel(item)==="Mobile"?"Backstock":"Mobile"}</button>
         <button class="secondary" type="button" onclick="markInventoryNeedsReview()">Needs Review</button>
         <button class="danger" type="button" onclick="markInventoryNotFound()">Not Found</button>
+        <button class="secondary" type="button" onclick="copyInventoryToWorkspace()">Duplicate to Workspace</button>
         <button class="secondary" type="button" onclick="openPartTag('${escapeHtml(String(item.local_key)).replace(/'/g,"&#39;")}')">Print Part Tag</button>
       </div>
       <p class="small">Enter initials here for flag and stock-category changes. Placement, count, and tag changes ask for initials on their own screen.</p>
@@ -479,7 +485,10 @@ async function markInventoryNotFound(fieldId="inventoryActionInitials"){
     }else showPortalNavNotice("Inventory marked Not Found.");
   }else if(currentInventoryItem?.id===item.id && document.getElementById("inventoryItemManagement").classList.contains("active")) openInventoryItemManagement("replace");
 }
-async function openAddInventory(){
+function openAddInventory(){
+  return openInventoryWorkspace({newCard:true});
+}
+async function openLegacyAddInventory(){
   if(!inventoryBinsReady||!inventoryCartsReady) await Promise.all([loadInventoryBins(),loadInventoryCarts()]);
   ["addItemName","addCategory","addPartNumber","addAssignedVehicle","addNotes"].forEach(id=>{const el=document.getElementById(id);if(el)el.value="";});
   document.getElementById("addQty").value=1;
@@ -546,40 +555,43 @@ async function addInventoryItem(){
     created_at:new Date().toISOString()
   };
 
+  if(inventoryLegacyPending){alert('A previous addition is unconfirmed. Use Retry Previous Addition before adding another part.');return;}
   inventoryAddPending=true;
   try{
-    const resp=await fetch(`${SUPABASE_URL}/rest/v1/inventory_items`,{
-      method:"POST",
-      headers:{...inventoryEventHeaders(initials),"Prefer":"return=representation"},
-      body:JSON.stringify(item)
-    });
-
-    if(!resp.ok){
-      const msg=await resp.text();
-      throw new Error(`Inventory insert failed: ${resp.status} ${msg}`);
-    }
-
-    const saved=await resp.json();
-    if(!saved?.[0]?.id) throw new Error("The new inventory record was not returned. Refresh inventory.");
-    Object.assign(item,saved[0]);
-
-    inventoryBackendReady=true;
-    const liveItem={...item,local_key:item.inventory_code||item.id};
-    inventoryData.push(liveItem);
-    currentInventoryItem=liveItem;
-    inventoryFilter="ALL";
-    inventoryStockCategory=stockCategory;
-    inventoryCartFilter="ALL";
-    document.getElementById("inventoryCartSelect").value="ALL";
-    document.getElementById("inventoryStockCategoryFilter").value=stockCategory;
-    document.getElementById("inventoryPlatformFilter").value="ALL";
-    updateInventoryBrowseTitle();
-    renderInventoryResults();
-    openInventoryDetail(liveItem.local_key,"replace",true);
-  }catch(err){
-    console.error(err);
-    alert("Unable to confirm the new shared inventory record. Refresh inventory before adding it again.");
-  }finally{
-    inventoryAddPending=false;
-  }
+    if(await reviewInventoryAddition(item,initials,(choice,actor)=>completeLegacyInventoryAddition(item,actor,choice)))return;
+    const choice={mode:'separate',request_id:inventoryOperationId()};
+    inventoryLegacyPending={item,initials,choice};
+    await completeLegacyInventoryAddition(item,initials,choice);
+  }catch(error){
+    if(error.status)inventoryLegacyPending=null;
+    const wrap=document.getElementById('inventoryAdd');
+    let status=document.getElementById('legacyAddStatus');
+    if(!status){status=document.createElement('div');status.id='legacyAddStatus';status.className='card';wrap.append(status);}
+    status.innerHTML=inventoryLegacyPending?'<p>Previous addition is unconfirmed. Retry confirms the same request without adding twice.</p><button class="secondary" type="button" onclick="retryLegacyInventoryAddition()">Retry Previous Addition</button>':'';
+    if(!inventoryLegacyPending)status.textContent=error.message;
+  }finally{inventoryAddPending=false;}
+}
+async function retryLegacyInventoryAddition(){
+  const pending=inventoryLegacyPending;if(!pending||inventoryAddPending)return;
+  inventoryAddPending=true;
+  try{await completeLegacyInventoryAddition(pending.item,pending.initials,pending.choice);}
+  catch(error){document.getElementById('legacyAddStatus').firstElementChild.textContent=error.message+' Retry confirms the same previous addition.';}
+  finally{inventoryAddPending=false;}
+}
+async function completeLegacyInventoryAddition(item,initials,choice){
+  const origin=document.querySelector('.screen.active')?.id;
+  const saved=choice.mode==='separate'
+    ?await intakeRequest('create_inventory_stock',{p_item:item,p_request_id:choice.request_id,p_actor_initials:initials},initials)
+    :await intakeRequest('reconcile_inventory_stock',{p_item_id:choice.existing_id,p_mode:choice.mode,p_quantity:item.quantity,p_expected_quantity:choice.expected_quantity,p_request_id:choice.request_id,p_actor_initials:initials},initials);
+  if(!saved?.id)throw new Error('The saved inventory record was not returned.');
+  inventoryLegacyPending=null;document.getElementById('legacyAddStatus')?.remove();
+  const liveItem={...saved,local_key:saved.inventory_code||saved.id};
+  const index=inventoryData.findIndex(row=>row.id===saved.id);if(index>=0)inventoryData[index]=liveItem;else inventoryData.push(liveItem);
+  currentInventoryItem=liveItem;inventoryBackendReady=true;
+  inventoryFilter='ALL';inventoryStockCategory=saved.stock_category;inventoryCartFilter='ALL';
+  document.getElementById('inventoryCartSelect').value='ALL';
+  document.getElementById('inventoryStockCategoryFilter').value=saved.stock_category;
+  document.getElementById('inventoryPlatformFilter').value='ALL';
+  updateInventoryBrowseTitle();renderInventoryResults();
+  if(document.querySelector('.screen.active')?.id===origin)openInventoryDetail(liveItem.local_key,'replace',true);else showPortalNavNotice('Inventory saved to the shared database.');
 }

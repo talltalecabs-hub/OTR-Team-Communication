@@ -6,9 +6,9 @@ import assert from "node:assert/strict";
 
 const root=join(dirname(fileURLToPath(import.meta.url)), "..");
 const assetsDir=join(root, "assets");
-const javascriptFiles=readdirSync(assetsDir)
+const javascriptFiles=readdirSync(assetsDir,{recursive:true})
   .filter(name=>name.endsWith(".js"))
-  .map(name=>join(assetsDir, name));
+  .map(name=>join(assetsDir,name));
 
 const allJavascriptFiles=[...javascriptFiles,...[root,join(root,"scripts")].flatMap(directory=>
   readdirSync(directory).filter(name=>/\.(?:mjs|js)$/.test(name)).map(name=>join(directory,name)))];
@@ -109,7 +109,8 @@ assert.equal(snapshot.parts.filter(row=>row.quantity===null && row.quantity_raw=
 assert.equal(snapshot.parts.find(row=>row.item_name==="Valvetronic actuator").quantity,0);
 const css=readFileSync(join(assetsDir,"styles.css"),"utf8");
 assert.match(css,/@page\s+otr-bin\s*\{\s*size:\s*4in 6in/);
-assert.match(css,/@page\s+otr-part\s*\{\s*size:\s*2in 1in/);
+assert.match(css,/@page\s+otr-small\s*\{\s*size:\s*50mm 25mm/);
+assert.match(css,/@page\s+otr-metric\s*\{\s*size:\s*150mm 100mm/);
 assert.doesNotMatch(css,/part-fold-sheet|part-tag-face\.rotate/);
 assert.doesNotMatch(css,/@page\s*\{\s*size:\s*2in 3in/);
 execFileSync(process.execPath,[join(root,"scripts/build_inventory_update.mjs"),"--check"],{stdio:"inherit"});
@@ -118,4 +119,4 @@ console.log(`PASS ${allJavascriptFiles.length} JavaScript syntax checks`);
 console.log(`PASS ${new Set(handlerNames).size} inline handler checks`);
 console.log("PASS preserved V1 seed: 297 unique records / 690 units");
 console.log("PASS workbook: F22 92 labels / E92 123 labels; 5 unknown counts; source units preserved");
-console.log("PASS bin directory: 43 entries / 39 numbered parent bins; 4×6 bin labels / single 2×1 part labels");
+console.log("PASS bin directory: 43 entries / 39 numbered parent bins; 4×6 in / 25×50 mm / 150×100 mm label presets");

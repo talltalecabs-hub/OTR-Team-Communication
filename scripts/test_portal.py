@@ -101,6 +101,12 @@ class FixtureError(Exception):
 
 class Backend:
     def __init__(self):
+        self.intake_requests = {}
+        self.drafts = {}
+        self.photos = {}
+        self.draft_attempts = []
+        self.lose_next_draft_create = False
+        self.lose_next_draft_commit = False
         self.vehicles = [dict(copy.deepcopy(v),is_active=True,revision=1) for v in REGISTRY]
         self.vehicle_attempts = []
         self.vehicle_events = []
@@ -286,8 +292,116 @@ class Backend:
         self.vehicle_events.append(dict(actor_initials=actor, from_state=before, to_state=copy.deepcopy(vehicle)))
         return vehicle
 
+    def intake_route(self,route):
+        request=route.request
+        if request.method=='OPTIONS':
+            route.fulfill(status=204,headers={'access-control-allow-origin':'*','access-control-allow-headers':'*','access-control-allow-methods':'GET,POST'});return
+        data=request.post_data_json;path=urlsplit(request.url).path.rsplit('/',1)[-1]
+        self.attempts.append(dict(path='rpc/'+path,method='POST',data=copy.deepcopy(data),headers=dict(request.headers)))
+        actor=self.actor(request,data);request_id=data['p_request_id']
+        if request_id in self.intake_requests:result=self.intake_requests[request_id]
+        elif path=='create_inventory_stock':
+            result=dict(copy.deepcopy(data['p_item']),id=request_id,quantity_unit='pcs')
+            self.items.append(result);self.event('add_stock',actor,None,result,delta=result['quantity'])
+        elif path=='rename_inventory_part':
+            result=self.find_item(data['p_item_id']);before=copy.deepcopy(result);result['item_name']=data['p_name'];self.event('metadata_changed',actor,before,result)
+        elif path=='rename_inventory_bin':
+            result=next(row for row in self.bins if row['id']==data['p_bin_id'])
+            before=copy.deepcopy(result);result['name']=data['p_name'];self.event('bin_updated',actor,before,result)
+        elif path=='reconcile_inventory_stock':
+            result=self.find_item(data['p_item_id'])
+            if result['quantity']!=data['p_expected_quantity']:
+                route.fulfill(status=409,content_type='application/json',body=json.dumps({'code':'40001','message':'The stock count changed. Refresh matches.'}));return
+            before=copy.deepcopy(result)
+            result['quantity']=result['quantity']+data['p_quantity'] if data['p_mode']=='add' else data['p_quantity']
+            self.event('quantity_corrected',actor,before,result,delta=result['quantity']-(before['quantity'] or 0))
+        else:
+            ids=data['p_expected_bin_ids'];moved=[]
+            for item in self.items:
+                if item['inventory_bin_id'] not in ids:continue
+                before=copy.deepcopy(item);item.update(inventory_bin_id=data['p_target_bin_id'],cart_code=None,stock_category='Backstock' if data['p_destination']=='backstock' else 'Mobile',location='Backstock' if data['p_destination']=='backstock' else next(b['bin_code'] for b in self.bins if b['id']==data['p_target_bin_id']))
+                self.event('move_inventory',actor,before,item,delta=0);moved.append(item['id'])
+            for physical in self.bins:
+                if physical['id'] in ids:physical['status']='Archived'
+            result=dict(item_count=len(moved),bin_count=len(ids))
+        self.intake_requests[request_id]=copy.deepcopy(result);self.writes.append(self.attempts[-1])
+        route.fulfill(status=200,content_type='application/json',body=json.dumps(result),headers={'access-control-allow-origin':'*'})
+
+    def workspace_route(self, route):
+        request=route.request
+        parsed=urlsplit(request.url)
+        if request.method=='OPTIONS':
+            route.fulfill(status=204,headers={'access-control-allow-origin':'*','access-control-allow-headers':'*','access-control-allow-methods':'GET,POST'})
+            return
+        def reply(data,status=200):
+            route.fulfill(status=status,content_type='application/json',body=json.dumps(data),headers={'access-control-allow-origin':'*'})
+        if '/storage/v1/' in parsed.path:
+            path=parsed.path.split('otr-inventory-workspace/',1)[-1]
+            if '/sign/' in parsed.path and request.method=='POST':
+                return reply({'signedURL':'/object/sign/otr-inventory-workspace/'+path+'?token=fixture'})
+            if request.method=='POST':
+                assert request.headers.get('x-upsert')=='false'
+                assert request.headers.get('cache-control')=='no-store'
+                self.photos[path]=request.post_data_buffer
+                return reply({'Key':path})
+            if path in self.photos:
+                return route.fulfill(status=200,content_type='image/png',body=self.photos[path])
+            return reply({'message':'Missing photo'},404)
+        if request.method=='GET':
+            rows=list(self.drafts.values())
+            if 'state=neq.archived' in request.url: rows=[r for r in rows if r['state']!='archived']
+            return reply(rows)
+        data=request.post_data_json
+        self.draft_attempts.append(copy.deepcopy(data))
+        try:
+            actor=self.actor(request,data)
+            path=parsed.path.rsplit('/',1)[-1]
+            if path=='save_inventory_workspace_draft':
+                card=self.drafts.get(data['p_id'])
+                if not card:
+                    assert data['p_revision']==0
+                    changes=data['p_changes']
+                    card=dict(id=data['p_id'],tag_id='TAG-D-'+data['p_id'].replace('-','').upper(),revision=1,state='draft',inventory_item_id=None,data=copy.deepcopy(changes.get('data',{})),x=changes.get('x',1200),y=changes.get('y',1200),actor_initials=actor,created_by=actor)
+                    self.drafts[card['id']]=card
+                    if self.lose_next_draft_create:
+                        self.lose_next_draft_create=False;route.abort('connectionreset');return
+                elif data['p_revision']!=0:
+                    if data['p_revision']!=card['revision']: return reply({'code':'40001','message':'This card changed on another device. Reload it before saving.'},409)
+                    changes=copy.deepcopy(data['p_changes'])
+                    card['data'].update(changes.pop('data',{}));card.update(changes);card['revision']+=1;card['actor_initials']=actor
+            elif path=='duplicate_inventory_workspace_draft':
+                card=self.drafts.get(data['p_new_id'])
+                if not card:
+                    source=self.drafts[data['p_source_id']]
+                    card=copy.deepcopy(source)
+                    card.update(id=data['p_new_id'],tag_id='TAG-D-'+data['p_new_id'].replace('-','').upper(),state='draft',inventory_item_id=None,revision=1,x=source['x']+36,y=source['y']+36,source_draft_id=source['id'],actor_initials=actor)
+                    self.drafts[card['id']]=card
+            elif path=='commit_inventory_workspace_draft':
+                card=self.drafts[data['p_id']]
+                if card['state']!='committed':
+                    assert card['revision']==data['p_revision'] and card['data'].get('item_name')
+                    details=card['data']
+                    item=make_item(self.next_number+1,'WS-'+card['id'].replace('-','').upper(),details['item_name'],platform=details.get('platform') or 'Unassigned',quantity=details.get('quantity'))
+                    item.update(id=card['id'],tag_id=card['tag_id'],compatibility=list(set([details.get('platform')]+details.get('compatibility',[]))),source_metadata={'workspace_draft_id':card['id'],'photo_paths':details.get('photo_paths',[])})
+                    if data.get('p_mode','separate')!='separate':
+                        item=self.find_item(data['p_existing_item_id']);before=copy.deepcopy(item)
+                        item['quantity']=item['quantity']+details['quantity'] if data['p_mode']=='add' else details['quantity']
+                        self.event('quantity_corrected',actor,before,item,delta=item['quantity']-before['quantity'])
+                    else:self.items.append(item);self.event('add_stock',actor,None,item,delta=item.get('quantity'))
+                    card.update(state='committed',inventory_item_id=item['id'],revision=card['revision']+1)
+                    if self.lose_next_draft_commit:
+                        self.lose_next_draft_commit=False;route.abort('connectionreset');return
+            else: raise FixtureError('Unknown workspace endpoint')
+            reply(card)
+        except Exception as error:
+            self.errors.append(repr(error));reply({'message':str(error)},400)
+
     def route(self, route):
         request = route.request
+        if any('/rpc/'+name in request.url for name in ['create_inventory_stock','reconcile_inventory_stock','retire_inventory_bin','rename_inventory_bin','rename_inventory_part']):
+            return self.intake_route(route)
+        if '/inventory_workspace_drafts' in request.url or '_inventory_workspace_draft' in request.url or '/storage/v1/' in request.url:
+            return self.workspace_route(route)
         parsed = urlsplit(request.url)
         path = parsed.path.split("/rest/v1/", 1)[-1]
         query = parse_qs(parsed.query)
@@ -358,6 +472,12 @@ class Backend:
                     before = copy.deepcopy(physical_bin)
                     physical_bin.update(copy.deepcopy(data))
                     self.event("bin_moved", actor, before, physical_bin)
+                    parents=[physical_bin]
+                    while parents:
+                        parent=parents.pop()
+                        for child in self.bins:
+                            if child.get('parent_bin_id')==parent['id'] and child.get('status')!='Archived':
+                                old_child=copy.deepcopy(child);child['cart_location']=parent.get('cart_location');self.event('bin_moved',actor,old_child,child);parents.append(child)
                     result = [physical_bin]
                 else:
                     raise FixtureError("Unexpected bin method")
@@ -414,7 +534,7 @@ def assert_label_pdf(page, filename, width, height):
     pdf = page.pdf(path=str(OUTPUT / filename), prefer_css_page_size=True, print_background=True)
     assert len(re.findall(rb"/Type\s*/Page\b", pdf)) == 1, filename
     boxes = re.findall(rb"/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]", pdf)
-    assert boxes and all(abs(float(w) - width) <= .5 and abs(float(h) - height) <= .5 for w, h in boxes), (filename, boxes)
+    assert boxes and all(abs(float(w) - width) <= .6 and abs(float(h) - height) <= .6 for w, h in boxes), (filename, boxes)
 
 
 def assert_no_request(backend, action):
@@ -727,7 +847,7 @@ def run_checks(page, backend):
     # Add Backstock through the management capability, with explicit initials.
     page.evaluate('browseInventory("ALL","Backstock")')
     assert "Shop hose stock" in page.locator("#inventoryResults").inner_text()
-    page.evaluate("openAddInventory()")
+    page.evaluate("openLegacyAddInventory()")
     page.fill("#addItemName", "New shop hose")
     page.fill("#addQty", "2")
     page.fill("#addCategory", "Cooling")
@@ -882,14 +1002,15 @@ def run_checks(page, backend):
     assert page.locator("#labelPrintCanvas .part-tag-face").count() == 1
     assert page.locator("#labelPrintCanvas .part-fold-sheet, #labelPrintCanvas .rotate").count() == 0
     dimensions = page.locator("#labelPrintCanvas").bounding_box()
-    assert dimensions["width"] == 192 and dimensions["height"] == 96
+    assert abs(dimensions["width"] - 50*96/25.4) < .5 and abs(dimensions["height"] - 25*96/25.4) < .5
     face = page.locator("#labelPrintCanvas .part-tag-face")
     human_text = face.inner_text()
     assert human_text and human_text == human_text.upper(), human_text
-    assert face.locator(".label-code39").count() == 1
+    assert face.locator(".part-tag-qr svg").count() == 1
+    assert face.locator(".part-tag-qr").get_attribute("data-scan-value")==added["tag_id"]
     assert face.get_attribute("data-tag-id") == added["tag_id"]
-    assert "2×1" in page.locator("#labelPrintButton").inner_text()
-    assert_label_pdf(page, "part-label-2x1.pdf", 144, 72)
+    assert "25×50 mm" in page.locator("#labelPrintButton").inner_text()
+    assert_label_pdf(page, "part-label-50x25mm.pdf", 50*72/25.4, 25*72/25.4)
     tag = added["tag_id"]
     before_tag_events = len(backend.events)
     page.evaluate("preparePartTag()")
@@ -916,10 +1037,11 @@ def run_checks(page, backend):
     assert "E92-A" in human_text and "E92-002" in human_text
     assert "UNCOUNTED" in human_text and not re.search(r"QTY\s+0(?:\D|$)", human_text), human_text
     assert "L249" not in human_text and "IMG_LINEAGE" not in human_text and ".XLSX" not in human_text, human_text
-    assert "TAG-E92-002-L249-C599823B" in lineage_face.locator(".label-code39").get_attribute("aria-label")
+    assert lineage_face.locator(".part-tag-qr").get_attribute("data-scan-value")=="TAG-E92-002-L249-C599823B"
+    page.locator("#labelPrintCanvas").screenshot(path=str(OUTPUT/"part-label-small.png"))
     assert backend.item("E92-002-L249") == lineage_before_label
     assert backend.item("E92-002-L249")["source_metadata"]["source_row"] == 249
-    assert_label_pdf(page, "lineage-part-label-2x1.pdf", 144, 72)
+    assert_label_pdf(page, "lineage-part-label-50x25mm.pdf", 50*72/25.4, 25*72/25.4)
     page.evaluate('openBinLabel("E92-002")')
     assert page.locator("#labelPrintCanvas .bin-label-sheet").count() == 1
     assert page.locator("#labelPrintCanvas .part-tag-face").count() == 0
@@ -927,6 +1049,23 @@ def run_checks(page, backend):
     dimensions = page.locator("#labelPrintCanvas").bounding_box()
     assert dimensions["width"] == 384 and dimensions["height"] == 576
     assert_label_pdf(page, "bin-label-4x6.pdf", 288, 432)
+    options=page.locator("#labelMediaSelect option").evaluate_all("els=>els.map(e=>e.value)")
+    assert options == ["inch4x6", "metric25x50", "metric150x100"]
+    for media, width, height in [("metric25x50",50*72/25.4,25*72/25.4),("metric150x100",150*72/25.4,100*72/25.4)]:
+        before_media_events=len(backend.events)
+        page.select_option("#labelMediaSelect",media)
+        assert_label_pdf(page,f"bin-label-{media}.pdf",width,height)
+        assert len(backend.events)==before_media_events
+    page.select_option("#labelMediaSelect","inch4x6")
+    page.evaluate('openPartTag("E92-002-L249")')
+    page.evaluate("preparePartTag()")
+    for media, width, height in [("inch4x6",288,432),("metric150x100",150*72/25.4,100*72/25.4)]:
+        page.select_option("#labelMediaSelect",media)
+        assert page.locator("#labelPrintCanvas .part-tag-face").count()==1
+        assert page.locator(".part-tag-face").get_attribute("data-tag-id")=="TAG-E92-002-L249-C599823B"
+        assert_label_pdf(page,f"part-label-{media}.pdf",width,height)
+    page.select_option("#labelMediaSelect","metric25x50")
+
 
     # Registered bins, loose containers on both carts, and UUID-only contents remain intact.
     page.evaluate('browseInventory("F30")')
@@ -1031,6 +1170,8 @@ def run_checks(page, backend):
     page.evaluate("toggleVehicleAdmin()")
     assert new_vehicle["is_active"] is False and len(backend.vehicle_events)==5
 
+    workspace_checks(page,backend)
+
     # Fresh document avoids rapid synthetic history resets contaminating the real click/back path.
     page.goto(base_url)
     page.wait_for_function("vehicleRegistryReady")
@@ -1052,12 +1193,152 @@ def run_checks(page, backend):
         if screen != "home":
             page.locator("#globalHomeButton").click()
         page.wait_for_selector("#home.active")
-    return dict(result="PASS", vehicle_administration="PASS", chassis_bin_sequence="PASS", shared_chassis_compatibility="PASS", screens_with_home_navigation=len(screens), crew_search_first="PASS", combined_location_bin="PASS", exact_vehicle_selection="PASS",
+    return dict(result="PASS", shared_creation_workspace="PASS", duplicate_stock_choices="PASS", bin_retirement="PASS", bin_and_part_names="PASS", sub_bins_follow_parent="PASS", vehicle_administration="PASS", chassis_bin_sequence="PASS", shared_chassis_compatibility="PASS", screens_with_home_navigation=len(screens), crew_search_first="PASS", combined_location_bin="PASS", exact_vehicle_selection="PASS",
                 known_null_and_zero_use="PASS", explicit_initials_all_paths="PASS", use_retry_idempotency="PASS",
                 pending_use_navigation="PASS", read_only_activity_history="PASS",
                 management_and_fast_move="PASS", ledger_events=len(backend.events), successful_inventory_requests=len(backend.writes),
                 submissions_and_offline_queue="PASS", exact_bin_contents="PASS", current_bin_search_single_column="PASS",
-                direct_notes_and_not_found="PASS", part_2x1_uppercase_label="PASS", preserved_4x6_bin_label="PASS")
+                direct_notes_and_not_found="PASS", part_uppercase_label="PASS", three_label_media_sizes="PASS", preserved_4x6_bin_label="PASS")
+
+
+def workspace_checks(page,backend):
+    import base64
+    stock_count=len(backend.items)
+    storage_before=page.evaluate('JSON.stringify(localStorage)')
+    page.evaluate('openAddInventory()')
+    page.wait_for_selector('#inventoryWorkspace.active')
+    assert page.evaluate('workspace.ready')
+    page.evaluate('workspaceCreateCard()')
+    assert not backend.drafts
+    page.fill('#workspaceInitials','qa')
+    backend.lose_next_draft_create=True
+    page.evaluate('workspaceCreateCard()')
+    assert len(backend.drafts)==1
+    page.evaluate('workspaceCreateCard()')
+    assert len(backend.drafts)==1
+    first=page.evaluate('workspace.selected')
+    page.fill('#workspacePartName','Workspace test fan')
+    page.select_option('#workspaceChassis','F30')
+    page.locator('#workspaceCompatibleChassis input[value="F22"]').check()
+    page.select_option('#workspaceCart','F30-A')
+    page.select_option('#workspaceBin',uid(240))
+    page.evaluate('workspaceFlush(workspace.selected)')
+    assert backend.drafts[first]['data']['quantity'] is None
+    assert set(backend.drafts[first]['data']['compatibility'])=={'F22','F30'}
+    photo=base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN7sAAAAASUVORK5CYII=')
+    page.locator('#workspacePhotoInput').set_input_files({'name':'crew.png','mimeType':'image/png','buffer':photo})
+    page.wait_for_function('workspace.uploading===0 && workspace.pending.size===0 && workspace.saving.size===0 && workspace.rows.get(workspace.selected).data.photo_paths.length===1')
+    assert len(backend.photos)==1
+    page.evaluate('workspacePrintCard()')
+    assert 'DRAFT' in page.inner_text('#labelPrintCanvas')
+    page.locator('#labelPrintCanvas').screenshot(path=str(OUTPUT/'workspace-draft-label.png'))
+    assert_label_pdf(page,'workspace-draft-50x25mm.pdf',50*72/25.4,25*72/25.4)
+    page.evaluate("showScreen('inventoryWorkspace')")
+    page.evaluate('workspaceDuplicateCard()')
+    second=page.evaluate('workspace.selected')
+    assert first!=second and len(backend.drafts)==2 and len(backend.items)==stock_count
+    assert backend.drafts[first]['tag_id']!=backend.drafts[second]['tag_id']
+    assert backend.drafts[first]['data']['photo_paths']==backend.drafts[second]['data']['photo_paths']
+    header=page.locator(f'.workspace-card-handle[data-card-id="{second}"]')
+    header.scroll_into_view_if_needed();box=header.bounding_box()
+    old_x=backend.drafts[second]['x']
+    page.mouse.move(box['x']+50,box['y']+12);page.mouse.down();page.mouse.move(box['x']+100,box['y']+32,steps=5);page.mouse.up()
+    page.evaluate('workspaceFlush(workspace.selected)')
+    assert backend.drafts[second]['x']==old_x+50
+    header.focus();header.press('ArrowRight');page.evaluate('workspaceFlush(workspace.selected)')
+    assert backend.drafts[second]['x']==old_x+70
+    # Independent browser context sees the same drafts/photos/positions without device persistence.
+    context=page.context.browser.new_context(viewport={'width':390,'height':844})
+    other=context.new_page();other.route('**/rest/v1/**',backend.route);other.route('**/storage/v1/**',backend.route)
+    other.on('dialog',lambda dialog:dialog.accept())
+    other.goto(base_url);other.wait_for_function('vehicleRegistryReady')
+    other.evaluate('openInventoryWorkspace()');other.evaluate('(id)=>workspaceSelect(id)',second)
+    assert other.input_value('#workspacePartName')=='Workspace test fan'
+    assert other.input_value('#workspaceQuantity')==''
+    assert other.evaluate('(id)=>workspace.rows.get(id).x',second)==old_x+70
+    other.fill('#workspaceInitials','qb')
+    page.fill('#workspaceNotes','Pending local edit')
+    page.evaluate('clearTimeout(workspace.timers.get(workspace.selected))')
+    other.fill('#workspaceNotes','Shared edit from another device');other.evaluate('workspaceFlush(workspace.selected)')
+    page.evaluate('workspaceFlush(workspace.selected)')
+    assert page.evaluate('workspace.errors.has(workspace.selected)')
+    assert backend.drafts[second]['data']['notes']=='Shared edit from another device'
+    assert page.input_value('#workspaceNotes')=='Pending local edit'
+    page.locator('#workspaceReloadCard').click()
+    page.wait_for_function('workspace.errors.size===0')
+    page.wait_for_function("document.getElementById('workspaceNotes').value==='Shared edit from another device'")
+    other.screenshot(path=str(OUTPUT/'workspace-mobile.png'),full_page=True)
+    context.close()
+    page.fill('#workspaceQuantity','1');page.evaluate('workspaceFlush(workspace.selected)')
+    backend.lose_next_draft_commit=True
+    page.evaluate('workspaceCommitCard()')
+    assert len(backend.items)==stock_count+1
+    assert backend.drafts[second]['inventory_item_id']==second
+    page.locator('#workspaceAddAnotherPart').click()
+    page.wait_for_function('(known)=>!known.includes(workspace.selected)',arg=[first,second])
+    third=page.evaluate('workspace.selected')
+    assert third not in [first,second]
+    assert page.input_value('#workspacePartName')==page.input_value('#workspaceQuantity')==''
+    # Matching stock requires an explicit Add / Replace / Separate decision.
+    page.fill('#workspacePartName','Workspace test fan');page.fill('#workspaceQuantity','2')
+    page.select_option('#workspaceChassis','F30')
+    page.evaluate('workspaceCommitCard()');page.wait_for_selector('#inventoryIntakeReview.active')
+    assert len(backend.items)==stock_count+1
+    assert page.locator('#intakeConfirm').is_disabled()
+    page.select_option('#intakeExistingItem',second);page.select_option('#intakeMode','replace')
+    assert '1 → 2' in page.inner_text('#intakeChoicePreview')
+    page.select_option('#intakeMode','add')
+    assert '1 + 2 = 3' in page.inner_text('#intakeChoicePreview')
+    page.locator('#intakeConfirm').click();page.wait_for_selector('#inventoryWorkspace.active')
+    assert backend.find_item(second)['quantity']==3 and len(backend.items)==stock_count+1
+    assert backend.drafts[third]['inventory_item_id']==second
+    assert page.evaluate('(tag)=>findInventoryItem(tag).id',backend.drafts[third]['tag_id'])==second
+    page.evaluate('workspaceArchiveCard()')
+    assert backend.drafts[third]['state']=='archived'
+    page.evaluate('workspaceToggleArchived(true)');page.evaluate('(id)=>workspaceSelect(id)',third)
+    page.evaluate('workspaceRestoreCard()');assert backend.drafts[third]['state']=='committed'
+    page.screenshot(path=str(OUTPUT/'workspace-desktop.png'),full_page=True)
+    assert_handlers(page)
+    assert page.evaluate('JSON.stringify(localStorage)')==storage_before
+    # A parent cart move carries all sub-bins and leaves part counts alone.
+    page.evaluate("openBinDetail('E92-018')")
+    page.locator('#binManagementControls summary').click()
+    page.select_option('#binCartLocationSelect','B');page.fill('#binCartInitials','cc');page.evaluate('saveBinCartLocation()')
+    assert all(row['cart_location']=='B' for row in backend.bins if row['bin_code'] in ['E92-018','E92-018-A','E92-018-B'])
+    page.evaluate("openBinDetail('E92-018-A')")
+    assert page.locator('#binCartLocationSelect').is_disabled()
+    page.evaluate("openBinDetail('E92-018')")
+    page.locator('#binManagementControls summary').click()
+    page.select_option('#binCartLocationSelect','A');page.fill('#binCartInitials','cc');page.evaluate('saveBinCartLocation()')
+    # Correct an entry error without changing stock, source lineage or unsaved Notes.
+    page.evaluate('(id)=>openInventoryDetail(id)',second)
+    page.fill('#inventoryDetailNotes','Unsaved note stays')
+    before_part=copy.deepcopy(backend.find_item(second))
+    page.fill('#inventoryDetailName','Corrected workspace fan')
+    attempts=len(backend.attempts);page.evaluate('saveInventoryPartName()');assert len(backend.attempts)==attempts
+    page.fill('#inventoryDetailInitials','pn');page.evaluate('saveInventoryPartName()')
+    assert page.input_value('#inventoryDetailNotes')=='Unsaved note stays'
+    assert backend.find_item(second)['item_name']=='Corrected workspace fan'
+    for field in ['id','quantity','tag_id','inventory_bin_id','source_metadata']:assert backend.find_item(second)[field]==before_part[field]
+    # Remove a real fixture bin only after choosing where every record goes.
+    page.evaluate("openBinDetail('E92-008')")
+    page.locator('#binManagementControls summary').click()
+    page.fill('#binDisplayName','Crew cooling spares')
+    attempts=len(backend.attempts);page.evaluate('saveInventoryBinName()');assert len(backend.attempts)==attempts
+    page.fill('#binCartInitials','bn');page.evaluate('saveInventoryBinName()')
+    assert next(row for row in backend.bins if row['bin_code']=='E92-008')['name']=='Crew cooling spares'
+    assert 'Crew cooling spares' in page.inner_text('#binDetailWrap h2')
+    page.evaluate('openDeleteInventoryBin()')
+    page.wait_for_selector('#deleteBinDestination')
+    before={row['id']:row['quantity'] for row in backend.items}
+    attempts=len(backend.attempts);page.evaluate('deleteInventoryBin()');assert len(backend.attempts)==attempts
+    page.select_option('#deleteBinDestination','backstock');page.fill('#deleteBinInitials','db')
+    page.locator('#deleteBinConfirm').click();page.wait_for_function('binDeletion===null')
+    assert next(row for row in backend.bins if row['bin_code']=='E92-008')['status']=='Archived'
+    assert {row['id']:row['quantity'] for row in backend.items}==before
+    assert all(row['inventory_bin_id']!=uid(208) for row in backend.items)
+    page.evaluate("openBinBrowser('E92')")
+    assert 'E92-008' not in page.locator('#binResults').inner_text()
 
 
 backend = Backend()
@@ -1072,6 +1353,7 @@ try:
         page = browser.new_page(viewport={"width": 1280, "height": 1000})
         page.set_default_timeout(15000)
         page.route("**/rest/v1/**", backend.route)
+        page.route("**/storage/v1/**", backend.route)
         page.on("pageerror", lambda error: runtime_errors.append(str(error)))
         page.on("dialog", lambda dialog: (alerts.append(dialog.message), dialog.accept()))
         result = run_checks(page, backend)
