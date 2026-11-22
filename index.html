@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#111111" />
-  <title>OTR Team Portal — V1.3.3</title>
-  <link rel="stylesheet" href="assets/styles.css?v=1.3.3" />
+  <title>OTR Team Portal — V1.3.4</title>
+  <link rel="stylesheet" href="assets/styles.css?v=1.3.4" />
 </head>
 <body>
 <div class="app">
@@ -16,7 +16,7 @@
     </div>
     <div style="display:flex;align-items:center;gap:10px">
       <button id="globalHomeButton" type="button" class="secondary hidden" onclick="resetAndHome()" style="min-height:44px;padding:9px 14px;font-size:15px">⌂ Home</button>
-      <div class="pill">Team Beta V1.3.3 • Shared database + offline queue</div>
+      <div class="pill">Team Beta V1.3.4 • Shared database + offline queue</div>
     </div>
   </div>
 
@@ -210,6 +210,12 @@
     </div>
   </section>
 
+  <section id="inventoryIntakeReview" class="screen">
+    <button class="secondary back" type="button" onclick="portalBack('inventoryManagement')">← Back</button><div id="inventoryIntakeReviewWrap" class="card"></div>
+  </section>
+  <section id="inventoryBinDelete" class="screen">
+    <button class="secondary back" type="button" onclick="portalBack('inventoryManagement')">← Back</button><div id="inventoryBinDeleteWrap" class="card"></div>
+  </section>
   <section id="inventoryWorkspace" class="screen">
     <button class="secondary back" type="button" onclick="portalBack('inventoryManagement')">← Inventory Management</button>
     <div class="workspace-heading"><div><h2 class="sectiontitle">Parts &amp; Labels</h2><p class="subtitle">Start anywhere. Leave a card unfinished. Pick it up on any device.</p></div><div class="workspace-actor"><label for="workspaceInitials">Initials</label><input id="workspaceInitials" class="inventory-initials" maxlength="8" autocomplete="off" autocapitalize="characters" placeholder="To save shared work" oninput="workspaceActorChanged()" /></div></div>
@@ -217,7 +223,7 @@
       <button class="primary" type="button" onclick="workspaceCreateCard()">＋ New Card</button>
       <label class="workspace-photo-add">＋ Add Photos<input id="workspaceIntakePhotos" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple onchange="workspaceIntakeFiles(this)" /></label>
       <button id="workspaceDuplicateButton" class="secondary" type="button" onclick="workspaceDuplicateCard()" disabled>Duplicate</button>
-      <button class="secondary" type="button" onclick="workspaceReload()">Refresh Shared Work</button>
+      <button class="secondary" type="button" onclick="workspaceReload()">Refresh Shared Work</button><button class="secondary" type="button" onclick="workspaceFindCards()">Find Cards</button>
       <div class="workspace-zoom"><button class="secondary" type="button" onclick="workspaceZoom(-0.1)" aria-label="Zoom out">−</button><span id="workspaceZoomValue">100%</span><button class="secondary" type="button" onclick="workspaceZoom(0.1)" aria-label="Zoom in">＋</button></div>
     </div>
     <label class="checkrow"><input id="workspaceShowArchived" type="checkbox" onchange="workspaceToggleArchived(this.checked)" /><span>Show archived cards</span></label>
@@ -905,14 +911,17 @@
   </section>
 </div>
 
-<script src="assets/config.js?v=1.3.3"></script>
-<script src="assets/core.js?v=1.3.3"></script>
-<script src="assets/submissions.js?v=1.3.3"></script>
-<script src="assets/inventory.js?v=1.3.3"></script>
-<script src="assets/labels.js?v=1.3.3"></script>
-<script src="assets/crew.js?v=1.3.3"></script>
-<script src="assets/vehicles.js?v=1.3.3"></script>
-<script src="assets/workspace.js?v=1.3.3"></script>
-<script src="assets/bootstrap.js?v=1.3.3"></script>
+<script src="assets/config.js?v=1.3.4"></script>
+<script src="assets/core.js?v=1.3.4"></script>
+<script src="assets/submissions.js?v=1.3.4"></script>
+<script src="assets/inventory.js?v=1.3.4"></script>
+<script src="assets/vendor/qrcode-generator-1.4.4.js?v=1.3.4"></script>
+<script src="assets/labels.js?v=1.3.4"></script>
+<script src="assets/crew.js?v=1.3.4"></script>
+<script src="assets/vehicles.js?v=1.3.4"></script>
+<script src="assets/intake.js?v=1.3.4"></script>
+<script src="assets/bin-management.js?v=1.3.4"></script>
+<script src="assets/workspace.js?v=1.3.4"></script>
+<script src="assets/bootstrap.js?v=1.3.4"></script>
 </body>
 </html>

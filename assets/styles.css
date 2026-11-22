@@ -476,6 +476,11 @@
     .part-tag-face .label-scan-block{margin-top:auto;padding-top:.025in;min-height:0}
     .part-tag-face .label-code39{height:.14in}
     .part-tag-face .label-scan-id{font-size:5pt;line-height:1;margin-top:.015in;white-space:nowrap}
+    .small-label-canvas .part-tag-face.has-qr{position:relative;padding-right:18mm}
+    .small-label-canvas .has-qr .part-tag-name{max-height:.36in}
+    .part-tag-qr{position:absolute;right:.5mm;top:3mm;width:17mm;text-align:center}
+    .part-tag-qr svg{display:block;width:17mm;height:17mm;shape-rendering:crispEdges}
+    .part-tag-qr .label-scan-id{font-size:4.5pt!important;margin:0!important}
 
     .large-label-canvas .part-tag-face{padding:.2in}
     .large-label-canvas .part-tag-brand{font-size:12pt}

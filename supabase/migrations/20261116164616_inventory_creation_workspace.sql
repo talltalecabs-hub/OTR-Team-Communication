@@ -9,16 +9,17 @@ create table if not exists public.inventory_workspace_drafts (
   revision integer not null default 1 check(revision>0),
   tag_id text generated always as ('TAG-D-'||upper(replace(id::text,'-',''))) stored unique,
   source_draft_id uuid references public.inventory_workspace_drafts(id) on delete restrict,
-  inventory_item_id uuid unique references public.inventory_items(id) on delete restrict,
+  inventory_item_id uuid references public.inventory_items(id) on delete restrict,
   created_by text not null,
   actor_initials text not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   check((state='draft' and inventory_item_id is null) or
-        (state='committed' and inventory_item_id=id) or
-        (state='archived' and (inventory_item_id is null or inventory_item_id=id)))
+        (state='committed' and inventory_item_id is not null) or
+        (state='archived'))
 );
 create index if not exists inventory_workspace_state_updated_idx on public.inventory_workspace_drafts(state,updated_at desc);
+create index if not exists inventory_workspace_item_idx on public.inventory_workspace_drafts(inventory_item_id) where inventory_item_id is not null;
 create index if not exists inventory_workspace_source_idx on public.inventory_workspace_drafts(source_draft_id) where source_draft_id is not null;
 alter table public.inventory_workspace_drafts enable row level security;
 revoke all on public.inventory_workspace_drafts from public,anon,authenticated;
@@ -33,7 +34,7 @@ create policy "OTR crew draft update" on public.inventory_workspace_drafts for u
 create table if not exists public.inventory_workspace_events (
   id uuid primary key default gen_random_uuid(),
   draft_id uuid not null references public.inventory_workspace_drafts(id) on delete restrict,
-  event_type text not null check(event_type in ('draft_created','draft_duplicated','draft_updated','draft_moved','draft_committed','draft_archived')),
+  event_type text not null check(event_type in ('draft_created','draft_duplicated','draft_updated','draft_moved','draft_committed','draft_archived','draft_restored')),
   actor_initials text not null check(actor_initials=upper(btrim(actor_initials)) and char_length(actor_initials) between 1 and 8 and actor_initials !~ '[[:cntrl:]]'),
   from_state jsonb,
   to_state jsonb not null,
@@ -65,9 +66,15 @@ begin
     if new.revision<>old.revision+1 then raise exception 'Draft revision must advance by one'; end if;
     if old.inventory_item_id is not null and (new.data is distinct from old.data or new.inventory_item_id is distinct from old.inventory_item_id or new.state='draft') then raise exception 'Open the saved inventory record to change stock; duplicate this card for a new part'; end if;
   end if;
-  if new.inventory_item_id is not null and not exists(select 1 from public.inventory_items where id=new.id and source_metadata->>'workspace_draft_id'=new.id::text) then raise exception 'Draft must link to its own committed stock'; end if;
+  if new.inventory_item_id is not null and not exists(select 1 from public.inventory_items where id=new.inventory_item_id and ((id=new.id and source_metadata->>'workspace_draft_id'=new.id::text) or exists(select 1 from public.inventory_events where inventory_item_id=new.inventory_item_id and request_id=new.id and operation_data->>'type'='stock_intake'))) then raise exception 'Draft must link to its own committed stock'; end if;
   if new.data ? 'quantity' and jsonb_typeof(new.data->'quantity') not in ('number','null') then raise exception 'Quantity must be a whole number or unknown'; end if;
   if new.data->>'quantity' is not null and ((new.data->>'quantity')::numeric<>trunc((new.data->>'quantity')::numeric) or (new.data->>'quantity')::numeric not between 0 and 2147483647) then raise exception 'Quantity must be a nonnegative whole number'; end if;
+  if new.data ? 'compatibility' then
+    if jsonb_typeof(new.data->'compatibility')<>'array' or jsonb_array_length(new.data->'compatibility')>20 then raise exception 'Invalid compatible chassis'; end if;
+    if exists(select 1 from jsonb_array_elements(new.data->'compatibility') c where jsonb_typeof(c)<>'string' or char_length(btrim(c #>> '{}')) not between 1 and 80) then raise exception 'Invalid compatible chassis'; end if;
+  end if;
+  if new.data ? 'stock_category' and new.data->>'stock_category' not in ('Mobile','Backstock') then raise exception 'Invalid inventory type'; end if;
+  if new.data ? 'label_media_id' and new.data->>'label_media_id' not in ('inch4x6','metric25x50','metric150x100') then raise exception 'Invalid label media'; end if;
   if new.data ? 'photo_paths' then
     if jsonb_typeof(new.data->'photo_paths')<>'array' then raise exception 'Invalid photos'; end if;
     if jsonb_array_length(new.data->'photo_paths')>8 then raise exception 'A card supports up to eight photos'; end if;
@@ -88,6 +95,7 @@ begin
   else
     v_before:=to_jsonb(old);
     v_type:=case when new.state='archived' and old.state<>'archived' then 'draft_archived'
+      when old.state='archived' and new.state<>'archived' then 'draft_restored'
       when new.state='committed' and old.state<>'committed' then 'draft_committed'
       when new.data is distinct from old.data then 'draft_updated' else 'draft_moved' end;
   end if;
@@ -146,7 +154,7 @@ begin
   v_data:=v_source.data;
   if v_source.inventory_item_id is not null then
     select * into strict v_stock from public.inventory_items where id=v_source.inventory_item_id;
-    v_data:=v_data||jsonb_build_object('item_name',v_stock.item_name,'quantity',v_stock.quantity,'quantity_unit',v_stock.quantity_unit,'platform',v_stock.platform,'stock_category',v_stock.stock_category,'cart_code',v_stock.cart_code,'inventory_bin_id',v_stock.inventory_bin_id,'condition',v_stock.condition,'category',v_stock.category,'part_number',v_stock.part_number,'notes',v_stock.notes,'source_inventory_item_id',v_stock.id);
+    v_data:=v_data||jsonb_build_object('item_name',v_stock.item_name,'quantity',v_stock.quantity,'quantity_unit',v_stock.quantity_unit,'platform',v_stock.platform,'stock_category',v_stock.stock_category,'cart_code',v_stock.cart_code,'inventory_bin_id',v_stock.inventory_bin_id,'condition',v_stock.condition,'category',v_stock.category,'part_number',v_stock.part_number,'notes',v_stock.notes,'source_inventory_item_id',v_stock.id,'compatibility',v_stock.compatibility);
   end if;
   return public.save_inventory_workspace_draft(p_new_id,0,jsonb_build_object('data',v_data,'x',least(11700,v_source.x+36),'y',least(11700,v_source.y+36),'source_draft_id',p_source_id),p_actor_initials);
 end;
@@ -154,9 +162,9 @@ $$;
 revoke all on function public.duplicate_inventory_workspace_draft(uuid,uuid,text) from public,anon,authenticated;
 grant execute on function public.duplicate_inventory_workspace_draft(uuid,uuid,text) to anon;
 
-create or replace function public.commit_inventory_workspace_draft(p_id uuid,p_revision integer,p_actor_initials text)
+create or replace function public.commit_inventory_workspace_draft(p_id uuid,p_revision integer,p_actor_initials text,p_mode text default 'separate',p_existing_item_id uuid default null,p_expected_quantity integer default null)
 returns jsonb language plpgsql security invoker set search_path=pg_catalog as $$
-declare v_row public.inventory_workspace_drafts%rowtype; v_data jsonb; v_actor text:=upper(btrim(coalesce(p_actor_initials,''))); v_previous text:=coalesce(current_setting('otr.actor_initials',true),''); v_platform text; v_bin public.inventory_bins%rowtype; v_cart text; v_category text; v_quantity integer; v_source public.inventory_items%rowtype; v_meta jsonb;
+declare v_row public.inventory_workspace_drafts%rowtype; v_data jsonb; v_actor text:=upper(btrim(coalesce(p_actor_initials,''))); v_previous text:=coalesce(current_setting('otr.actor_initials',true),''); v_platform text; v_bin public.inventory_bins%rowtype; v_cart text; v_category text; v_quantity integer; v_source public.inventory_items%rowtype; v_meta jsonb; v_compatibility jsonb;
 begin
   if char_length(v_actor) not between 1 and 8 or v_actor ~ '[[:cntrl:]]' then raise exception 'Initials are required'; end if;
   if p_id is null or p_revision is null or p_revision<1 then raise exception 'Invalid draft revision'; end if;
@@ -167,6 +175,9 @@ begin
   v_data:=v_row.data;
   if nullif(btrim(v_data->>'item_name'),'') is null then raise exception 'Give this part a name before saving it to inventory'; end if;
   v_platform:=coalesce(nullif(v_data->>'platform',''),'Unassigned');
+  select coalesce(jsonb_agg(code order by code),'[]'::jsonb) into v_compatibility
+  from (select distinct case when value='M235 / M235iR' then 'F22' else value end as code
+        from jsonb_array_elements_text(coalesce(v_data->'compatibility','[]')||case when v_platform='Unassigned' then '[]'::jsonb else jsonb_build_array(v_platform) end)) codes;
   v_category:=coalesce(v_data->>'stock_category','Mobile');
   v_quantity:=(v_data->>'quantity')::integer;
   v_cart:=nullif(v_data->>'cart_code','');
@@ -181,15 +192,25 @@ begin
     v_meta:=v_meta||jsonb_build_object('copied_from_inventory_id',v_source.id,'copied_source_metadata',v_source.source_metadata);
   end if;
   perform set_config('otr.actor_initials',v_actor,true);
+  if p_mode not in ('add','replace','separate') or p_mode is null then raise exception 'Choose how this stock should be saved'; end if;
+  if p_mode<>'separate' then
+    select * into strict v_source from public.inventory_items where id=p_existing_item_id;
+    if v_source.quantity_unit<>coalesce(nullif(v_data->>'quantity_unit',''),'pcs') then raise exception 'Units differ. Keep a separate record.'; end if;
+    perform public.reconcile_inventory_stock(p_existing_item_id,p_mode,v_quantity,p_expected_quantity,v_row.id,v_actor);
+    update public.inventory_workspace_drafts set state='committed',inventory_item_id=p_existing_item_id,revision=revision+1 where id=p_id returning * into v_row;
+    perform set_config('otr.actor_initials',v_previous,true);
+    return to_jsonb(v_row);
+  end if;
+  if p_existing_item_id is not null then raise exception 'A separate record does not need an existing target'; end if;
   insert into public.inventory_items(id,inventory_code,item_name,quantity,quantity_unit,platform,category,condition,status,notes,source,verification_status,part_number,stock_category,cart_code,inventory_bin_id,location,tag_id,compatibility,source_metadata,verified_by,verified_at)
-  values(v_row.id,'WS-'||upper(replace(v_row.id::text,'-','')),btrim(v_data->>'item_name'),v_quantity,coalesce(nullif(v_data->>'quantity_unit',''),'pcs'),v_platform,coalesce(nullif(v_data->>'category',''),'Uncategorized'),coalesce(nullif(v_data->>'condition',''),'Unspecified'),case when v_quantity is null then 'Uncounted' when v_quantity=0 then 'Out of Stock' else 'In Stock' end,nullif(v_data->>'notes',''),'Creation Workspace',case when v_quantity is null then 'Needs Review' else 'Verified' end,nullif(v_data->>'part_number',''),v_category,v_cart,v_bin.id,coalesce(v_bin.bin_code,case when v_category='Backstock' then 'Backstock' else coalesce(v_cart,'Unassigned') end),v_row.tag_id,case when v_platform='Unassigned' then '[]'::jsonb else jsonb_build_array(v_platform) end,v_meta,v_actor,case when v_quantity is not null then now() end);
+  values(v_row.id,'WS-'||upper(replace(v_row.id::text,'-','')),btrim(v_data->>'item_name'),v_quantity,coalesce(nullif(v_data->>'quantity_unit',''),'pcs'),v_platform,coalesce(nullif(v_data->>'category',''),'Uncategorized'),coalesce(nullif(v_data->>'condition',''),'Unspecified'),case when v_quantity is null then 'Uncounted' when v_quantity=0 then 'Out of Stock' else 'In Stock' end,nullif(v_data->>'notes',''),'Creation Workspace',case when v_quantity is null then 'Needs Review' else 'Verified' end,nullif(v_data->>'part_number',''),v_category,v_cart,v_bin.id,coalesce(v_bin.bin_code,case when v_category='Backstock' then 'Backstock' else coalesce(v_cart,'Unassigned') end),v_row.tag_id,v_compatibility,v_meta,v_actor,case when v_quantity is not null then now() end);
   update public.inventory_workspace_drafts set state='committed',inventory_item_id=id,revision=revision+1 where id=p_id returning * into v_row;
   perform set_config('otr.actor_initials',v_previous,true);
   return to_jsonb(v_row);
 end;
 $$;
-revoke all on function public.commit_inventory_workspace_draft(uuid,integer,text) from public,anon,authenticated;
-grant execute on function public.commit_inventory_workspace_draft(uuid,integer,text) to anon;
+revoke all on function public.commit_inventory_workspace_draft(uuid,integer,text,text,uuid,integer) from public,anon,authenticated;
+grant execute on function public.commit_inventory_workspace_draft(uuid,integer,text,text,uuid,integer) to anon;
 
 -- Immutable private photo objects. Duplicates share references without copying or
 -- deleting bytes. Removing a photo from a card only removes its reference.

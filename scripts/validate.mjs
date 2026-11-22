@@ -6,9 +6,9 @@ import assert from "node:assert/strict";
 
 const root=join(dirname(fileURLToPath(import.meta.url)), "..");
 const assetsDir=join(root, "assets");
-const javascriptFiles=readdirSync(assetsDir)
+const javascriptFiles=readdirSync(assetsDir,{recursive:true})
   .filter(name=>name.endsWith(".js"))
-  .map(name=>join(assetsDir, name));
+  .map(name=>join(assetsDir,name));
 
 const allJavascriptFiles=[...javascriptFiles,...[root,join(root,"scripts")].flatMap(directory=>
   readdirSync(directory).filter(name=>/\.(?:mjs|js)$/.test(name)).map(name=>join(directory,name)))];

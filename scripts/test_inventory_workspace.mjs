@@ -11,7 +11,7 @@ const migration=suffix=>'supabase/migrations/'+readdirSync(join(root,'supabase/m
 const db=new PGlite();
 const one=async(q,p=[])=>(await db.query(q,p)).rows[0];
 const rows=async(q,p=[])=>(await db.query(q,p)).rows;
-const snapshot=async()=>one("select (select md5(string_agg(to_jsonb(i)::text,'' order by id)) from inventory_items i) as items,(select md5(string_agg(to_jsonb(b)::text,'' order by id)) from inventory_bins b) as bins,(select md5(string_agg(to_jsonb(v)::text,'' order by vehicle_code)) from vehicles v) as vehicles");
+const snapshot=async()=>one("select (select md5(string_agg(to_jsonb(i)::text,'' order by id)) from inventory_items i) as items,(select md5(string_agg((to_jsonb(b)-'name')::text,'' order by id)) from inventory_bins b) as bins,(select md5(string_agg(to_jsonb(v)::text,'' order by vehicle_code)) from vehicles v) as vehicles");
 const call=async(q,p=[])=>{await db.exec('set role anon');try{return await one(q,p);}finally{await db.exec('reset role');}};
 const save=async(id,revision,changes,actor='jd')=>(await call('select save_inventory_workspace_draft($1,$2,$3,$4) as result',[id,revision,changes,actor])).result;
 const duplicate=async(source,id,actor='jd')=>(await call('select duplicate_inventory_workspace_draft($1,$2,$3) as result',[source,id,actor])).result;
@@ -22,8 +22,10 @@ try{
   for(const f of ['schema.sql','vehicles_schema.sql','seed_inventory.sql','label_assistant_schema.sql','inventory_count_schema.sql','inventory_stock_category_schema.sql','update_inventory_f22_e92_20261108.sql','e92_cart_assignments.sql'])await db.exec(read('supabase/'+f));
   await db.exec(read(migration('_inventory_crew_workflow.sql')));
   await db.exec("create schema storage; create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]); create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text,unique(bucket_id,name)); alter table storage.objects enable row level security; grant usage on schema storage to anon; grant select,insert on storage.objects to anon;");
+  await db.exec(read(migration('_admin_vehicle_registry.sql')));
   const before=await snapshot();
   await db.exec(read(migration('_inventory_creation_workspace.sql')));
+  await db.exec(read(migration('_inventory_bin_retirement_and_stock_intake.sql')));
   assert.deepEqual(await snapshot(),before);
   assert.equal((await one("select public from storage.buckets where id='otr-inventory-workspace'")).public,false);
   const initial=await counts();
@@ -37,7 +39,7 @@ try{
   await assert.rejects(save(id,4,{data:{item_name:'Overwrites other crew'}}),/another device/);
   await assert.rejects(save(id,1,{data:{quantity:1.5}}),/whole number/);
   const bin=await one("select id from inventory_bins where bin_code='F30-000'");
-  const data={item_name:'Workspace rotor',quantity:null,quantity_unit:'pcs',platform:'F30',stock_category:'Mobile',cart_code:'F30-A',inventory_bin_id:bin.id,notes:'Photo first, count later',label_media_id:'metric25x50'};
+  const data={item_name:'Workspace rotor',quantity:null,quantity_unit:'pcs',platform:'F30',compatibility:['F22','F30'],stock_category:'Mobile',cart_code:'F30-A',inventory_bin_id:bin.id,notes:'Photo first, count later',label_media_id:'metric25x50'};
   card=await save(id,card.revision,{data});
   assert.equal(card.data.quantity,null);
   // Upload policy only permits objects under an existing active card.
@@ -57,7 +59,7 @@ try{
   copy=await commit(copy.id,copy.revision);
   assert.equal(copy.inventory_item_id,copy.id);
   let stock=await one('select * from inventory_items where id=$1',[copy.id]);
-  assert.equal(stock.tag_id,stockTag);assert.equal(stock.quantity,3);assert.equal(stock.cart_code,'F30-A');
+  assert.equal(stock.tag_id,stockTag);assert.equal(stock.quantity,3);assert.equal(stock.cart_code,'F30-A');assert.deepEqual(stock.compatibility,['F22','F30']);
   assert.deepEqual(stock.source_metadata.photo_paths,[path]);assert.equal(stock.source_metadata.workspace_draft_id,copy.id);
   const committedCounts=await counts();await commit(copy.id,previousRevision);assert.deepEqual(await counts(),committedCounts);
   assert.equal(committedCounts.stock,initial.stock+1);assert.equal(committedCounts.stock_events,1);
@@ -85,6 +87,80 @@ try{
   await assert.rejects(call("update inventory_workspace_events set actor_initials='FAKE' returning id"),/permission denied/);
   assert.equal((await one("select count(*)::int as total from inventory_workspace_events where actor_initials<>upper(btrim(actor_initials))")).total,0);
   assert((await rows("select event_type from inventory_workspace_events where draft_id=$1",[id])).some(e=>e.event_type==='draft_committed'));
+
+  // Explicit incoming-stock decisions update one existing count atomically.
+  const target=await one('select * from inventory_items where id=$1',[copy.id]);
+  const intakeRequest=randomUUID();
+  const reconcile=(mode,q,expected,request=intakeRequest)=>call('select reconcile_inventory_stock($1,$2,$3,$4,$5,$6) as result',[target.id,mode,q,expected,request,'QA']);
+  await reconcile('add',1,target.quantity);const intakeCounts=await counts();
+  await reconcile('add',1,target.quantity);assert.deepEqual(await counts(),intakeCounts);
+  let current=await one('select * from inventory_items where id=$1',[target.id]);assert.equal(current.quantity,target.quantity+1);assert.deepEqual(current.source_metadata,target.source_metadata);assert.equal(current.inventory_bin_id,target.inventory_bin_id);
+  await assert.rejects(reconcile('add',1,999,randomUUID()),/count changed/);
+  await reconcile('replace',6,current.quantity,randomUUID());
+  let mergeDraft=await duplicate(copy.id,randomUUID());mergeDraft=await save(mergeDraft.id,mergeDraft.revision,{data:{quantity:1}});
+  const stockBeforeMerge=(await counts()).stock;
+  mergeDraft=(await call('select commit_inventory_workspace_draft($1,$2,$3,$4,$5,$6) as result',[mergeDraft.id,mergeDraft.revision,'QA','add',target.id,6])).result;
+  assert.equal(mergeDraft.inventory_item_id,target.id);assert.equal((await counts()).stock,stockBeforeMerge);
+  assert.equal((await one('select quantity from inventory_items where id=$1',[target.id])).quantity,7);
+  await call('select commit_inventory_workspace_draft($1,$2,$3,$4,$5,$6)',[mergeDraft.id,1,'QA','add',target.id,6]);
+  assert.equal((await one('select quantity from inventory_items where id=$1',[target.id])).quantity,7);
+  const mergedArchive=await save(mergeDraft.id,mergeDraft.revision,{state:'archived'});
+  const restoredMerge=await save(mergedArchive.id,mergedArchive.revision,{state:'committed'});assert.equal(restoredMerge.inventory_item_id,target.id);
+  assert.equal(restoredMerge.tag_id,mergeDraft.tag_id);
+  await assert.rejects(call('select reconcile_inventory_stock($1,$2,$3,$4,$5,$6)',[id,'add',1,null,randomUUID(),'QA']),/uncounted/);
+
+  // Retire parent/child bins only after reviewing the exact stock identities.
+  await db.exec("select set_config('request.headers','{\"x-otr-initials\":\"QA\"}',false)");
+  const rootBin=await one("insert into inventory_bins(bin_code,make,make_prefix,model,system) values('E92-900','BMW','B','E92','Retirement fixture') returning *");
+  const renameRequest=randomUUID();
+  const rename=()=>call('select rename_inventory_bin($1,$2,$3,$4,$5) as result',[rootBin.id,'Cooling pack',null,renameRequest,'QA']);
+  await rename();const afterRename=await counts();await rename();assert.deepEqual(await counts(),afterRename);
+  const named=await one('select * from inventory_bins where id=$1',[rootBin.id]);assert.equal(named.name,'Cooling pack');assert.equal(named.bin_code,rootBin.bin_code);
+  await assert.rejects(call('select rename_inventory_bin($1,$2,$3,$4,$5)',[rootBin.id,'Overwrite',null,randomUUID(),'QA']),/name changed/);
+  const manualRequest=randomUUID();
+  const manual={inventory_code:'QA-MANUAL-STOCK',item_name:'Manual intake',quantity:2,platform:'E92',stock_category:'Mobile',location:'Unassigned',condition:'New',verification_status:'Verified',status:'In Stock',compatibility:['E92']};
+  const manualCall=()=>call('select create_inventory_stock($1,$2,$3) as result',[manual,manualRequest,'QA']);
+  await manualCall();const afterManual=await counts();await manualCall();assert.deepEqual(await counts(),afterManual);
+  const childBin=await one("insert into inventory_bins(bin_code,make,make_prefix,model,system,parent_bin_id) values('E92-900-A','BMW','B','E92','Child fixture',$1) returning *",[rootBin.id]);
+  const destinationBin=await one("insert into inventory_bins(bin_code,make,make_prefix,model,system,cart_location) values('E92-901','BMW','B','E92','Destination','B') returning *");
+  const sourceItems=await rows("select * from inventory_items where platform='E92' order by quantity nulls first,id limit 2");
+  await db.query("update inventory_items set stock_category='Mobile',cart_code=null,inventory_bin_id=$1 where id=$2",[rootBin.id,sourceItems[0].id]);
+  await db.query("update inventory_items set stock_category='Mobile',cart_code=null,inventory_bin_id=$1 where id=$2",[childBin.id,sourceItems[1].id]);
+  const partBeforeName=await one('select * from inventory_items where id=$1',[sourceItems[0].id]);
+  const partRenameRequest=randomUUID();const renamePart=()=>call('select rename_inventory_part($1,$2,$3,$4,$5) as result',[partBeforeName.id,'Corrected part name',partBeforeName.item_name,partRenameRequest,'QA']);
+  await renamePart();const afterPartName=await counts();await renamePart();assert.deepEqual(await counts(),afterPartName);
+  const partAfterName=await one('select * from inventory_items where id=$1',[partBeforeName.id]);
+  for(const field of ['quantity','quantity_unit','tag_id','inventory_code','platform','source_metadata','inventory_bin_id'])assert.deepEqual(partAfterName[field],partBeforeName[field]);
+  await assert.rejects(call('select rename_inventory_part($1,$2,$3,$4,$5)',[partBeforeName.id,'Overwrites',partBeforeName.item_name,randomUUID(),'QA']),/name changed/);
+  const retirementRequest=randomUUID();
+  const retire=(destination,target,expectedItems=sourceItems.map(i=>i.id),request=retirementRequest)=>call('select retire_inventory_bin($1,$2,$3,$4,$5,$6,$7) as result',[rootBin.id,destination,target,[rootBin.id,childBin.id],expectedItems,request,'QA']);
+  const retirementBefore=await counts();
+  await assert.rejects(retire('backstock',null,[]),/contents changed/);assert.deepEqual(await counts(),retirementBefore);
+  await assert.rejects(retire('bin',childBin.id),/outside/);
+  await db.exec(`create function fail_retirement_audit() returns trigger language plpgsql as $$begin if new.bin_id='${rootBin.id}'::uuid and new.to_state->>'status'='Archived' then raise exception 'injected retirement audit failure';end if;return new;end$$;create trigger fail_retirement_audit before insert on inventory_events for each row execute function fail_retirement_audit();`);
+  const beforeFailedRetirement=await snapshot();const failedRetirementCounts=await counts();
+  await assert.rejects(retire('backstock',null),/injected retirement/);assert.deepEqual(await snapshot(),beforeFailedRetirement);assert.deepEqual(await counts(),failedRetirementCounts);
+  await db.exec('drop trigger fail_retirement_audit on inventory_events;');
+  await retire('backstock',null);const afterRetire=await counts();await retire('backstock',null);assert.deepEqual(await counts(),afterRetire);
+  assert.equal((await one('select status from inventory_bins where id=$1',[rootBin.id])).status,'Archived');
+  assert.equal((await one('select status from inventory_bins where id=$1',[childBin.id])).status,'Archived');
+  for(const original of sourceItems){const moved=await one('select * from inventory_items where id=$1',[original.id]);for(const field of ['quantity','quantity_unit','platform','inventory_code','source_metadata'])assert.deepEqual(moved[field],original[field]);assert.equal(moved.stock_category,'Backstock');assert.equal(moved.inventory_bin_id,null);assert.equal(moved.cart_code,null);}
+  await assert.rejects(db.query('update inventory_items set inventory_bin_id=$1 where id=$2',[rootBin.id,sourceItems[0].id]),/deleted/);
+  await assert.rejects(call('select retire_inventory_bin($1,$2,$3,$4,$5,$6,$7)',[bin.id,'backstock',null,[bin.id],[],randomUUID(),'QA']),/reserved/);
+  const movingBin=await one("insert into inventory_bins(bin_code,make,make_prefix,model,system) values('E92-902','BMW','B','E92','Move all fixture') returning *");
+  await db.query("update inventory_items set stock_category='Mobile',inventory_bin_id=$1 where id=$2",[movingBin.id,sourceItems[0].id]);
+  await call('select retire_inventory_bin($1,$2,$3,$4,$5,$6,$7)',[movingBin.id,'bin',destinationBin.id,[movingBin.id],[sourceItems[0].id],randomUUID(),'QA']);
+  assert.equal((await one('select inventory_bin_id from inventory_items where id=$1',[sourceItems[0].id])).inventory_bin_id,destinationBin.id);
+
+  const cartParent=await one("insert into inventory_bins(bin_code,make,make_prefix,model,system,cart_location) values('E92-950','BMW','B','E92','Cart group','A') returning *");
+  const cartChild=await one("insert into inventory_bins(bin_code,make,make_prefix,model,system,parent_bin_id) values('E92-950-A','BMW','B','E92','Cart child',$1) returning *",[cartParent.id]);
+  const cartGrandchild=await one("insert into inventory_bins(bin_code,make,make_prefix,model,system,parent_bin_id) values('E92-950-A-A','BMW','B','E92','Cart grandchild',$1) returning *",[cartChild.id]);
+  assert.equal(cartChild.cart_location,'A');assert.equal(cartGrandchild.cart_location,'A');
+  await call("update inventory_bins set cart_location='B' where id=$1 returning id",[cartParent.id]);
+  assert((await rows('select cart_location from inventory_bins where id=any($1)',[[cartParent.id,cartChild.id,cartGrandchild.id]])).every(b=>b.cart_location==='B'));
+  await assert.rejects(call("update inventory_bins set cart_location='A' where id=$1 returning id",[cartChild.id]),/parent bin/);
+  await call("update inventory_bins set cart_location=null where id=$1 returning id",[cartParent.id]);
+  assert((await rows('select cart_location from inventory_bins where id=any($1)',[[cartParent.id,cartChild.id,cartGrandchild.id]])).every(b=>b.cart_location===null));
   assert.equal((await one("select nullif(current_setting('otr.actor_initials',true),'') as actor")).actor,null);
-  console.log('PASS shared workspace PostgreSQL: no baseline changes, private immutable photos, initials, revision conflicts, retry-safe creation/duplication/commit, unique copy identity, separate draft counts, unknown stock, placement/photos/lineage, committed-card protection, archive and atomic rollback');
+  console.log('PASS shared workspace PostgreSQL: no baseline changes, private immutable photos, initials, revision conflicts, retry-safe creation/duplication/commit, unique copy identity, separate draft counts, unknown stock, placement/photos/lineage, committed-card protection, archive, explicit additive/replacement intake, stable merged-tag links, rename and parent/child retirement to Backstock/another bin, and atomic rollback');
 }finally{await db.close();}
