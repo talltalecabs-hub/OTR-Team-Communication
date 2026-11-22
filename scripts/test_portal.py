@@ -702,6 +702,14 @@ def run_checks(page, backend):
     added = next(item for item in backend.items if item["item_name"] == "New shop hose")
     assert added["stock_category"] == "Backstock" and added["quantity"] == 2
     assert backend.events[-1]["event_type"] == "add_stock" and backend.events[-1]["actor_initials"] == "NS"
+    before_another = len(backend.writes)
+    page.locator("#addAnotherPartButton").click()
+    page.wait_for_selector("#inventoryAdd.active")
+    assert page.input_value("#addItemName") == page.input_value("#addPartNumber") == page.input_value("#addNotes") == page.input_value("#addInitials") == ""
+    assert page.input_value("#addQty") == "1"
+    assert page.locator("#addItemName").evaluate("el=>el===document.activeElement")
+    assert len(backend.writes) == before_another
+
 
     # Every bin creation and cart movement has its own initials field and audit event.
     page.evaluate("openLabelAssistant()")

@@ -178,7 +178,7 @@ function renderInventoryResults(){
 function findInventoryItem(key){
   return inventoryData.find(x=>String(x.local_key)===String(key));
 }
-function openInventoryDetail(key,historyMode="push"){
+function openInventoryDetail(key,historyMode="push",justAdded=false){
   const item=findInventoryItem(key);
   if(!item) return;
   currentInventoryItem=item;
@@ -188,6 +188,7 @@ function openInventoryDetail(key,historyMode="push"){
   const direct=assignment==="Specific Vehicle"&&item.assigned_vehicle ? `<span class="inv-badge direct">DIRECT SPARE • ${escapeHtml(item.assigned_vehicle)}</span>`:"";
   const imported=(item.verification_status||"Imported")==="Imported";
   wrap.innerHTML=`
+    ${justAdded?'<div class="card" style="margin-bottom:18px"><p role="status"><strong>Part added to shared inventory.</strong></p><button id="addAnotherPartButton" class="primary" type="button" onclick="openAddInventory()">Add Another Part</button></div>':""}
     <h2 class="sectiontitle">${escapeHtml(item.item_name||"Inventory Item")}</h2>
     <div id="inventoryDetailStatus" class="inventory-statusbar">${invBadge(item.verification_status)} <span class="inv-badge direct">${escapeHtml(inventoryStockCategoryLabel(item))}</span> ${direct}</div>
     <div class="card">
@@ -440,6 +441,7 @@ async function openAddInventory(){
   setupInventoryPlacement("add");
   toggleAddAssignedVehicle();
   showScreen("inventoryAdd");
+  document.getElementById("addItemName").focus();
 }
 function newInventoryCode(platform){
   const prefix=(platform||"GEN").toUpperCase().replace(/[^A-Z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,12)||"GEN";
@@ -523,7 +525,7 @@ async function addInventoryItem(){
     document.getElementById("inventoryPlatformFilter").value="ALL";
     updateInventoryBrowseTitle();
     renderInventoryResults();
-    openInventoryDetail(liveItem.local_key,"replace");
+    openInventoryDetail(liveItem.local_key,"replace",true);
   }catch(err){
     console.error(err);
     alert("Unable to confirm the new shared inventory record. Refresh inventory before adding it again.");
