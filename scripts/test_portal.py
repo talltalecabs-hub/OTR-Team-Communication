@@ -101,6 +101,9 @@ class FixtureError(Exception):
 
 class Backend:
     def __init__(self):
+        self.vehicles = [dict(copy.deepcopy(v),is_active=True,revision=1) for v in REGISTRY]
+        self.vehicle_attempts = []
+        self.vehicle_events = []
         self.items = copy.deepcopy(INITIAL_ITEMS)
         self.bins = copy.deepcopy(INITIAL_BINS)
         self.events = []
@@ -261,6 +264,28 @@ class Backend:
         route.fulfill(status=200, content_type="application/json", body=json.dumps(result),
                       headers={"access-control-allow-origin": "*"})
 
+    def save_vehicle(self, data, actor):
+        code, revision, changes = data["p_vehicle_code"], data["p_revision"], data["p_changes"]
+        vehicle = next((v for v in self.vehicles if v["vehicle_code"] == code), None)
+        if vehicle and revision == 0:
+            return vehicle
+        if vehicle and vehicle["revision"] != revision:
+            raise FixtureError("This vehicle changed since you opened it. Reload before saving.")
+        before = copy.deepcopy(vehicle)
+        if vehicle is None:
+            vehicle = dict(vehicle_code=code, revision=0, is_active=True)
+        for key in ["vehicle_name", "platform", "status"]:
+            if not str(changes.get(key, vehicle.get(key, ""))).strip():
+                raise FixtureError("Enter a vehicle name, chassis and status")
+        vehicle.update(copy.deepcopy(changes))
+        vehicle["vehicle_name"] = vehicle["vehicle_name"].strip()
+        vehicle["designation"] = vehicle.get("designation") or None
+        vehicle["revision"] += 1
+        if before is None:
+            self.vehicles.append(vehicle)
+        self.vehicle_events.append(dict(actor_initials=actor, from_state=before, to_state=copy.deepcopy(vehicle)))
+        return vehicle
+
     def route(self, route):
         request = route.request
         parsed = urlsplit(request.url)
@@ -274,14 +299,20 @@ class Backend:
             return
         data = request.post_data_json if request.method in ["POST", "PATCH"] else {}
         data = data or {}
-        inventory_mutation = request.method != "GET" and (path.startswith("inventory_") or path.startswith("rpc/"))
+        registry_mutation = request.method == "POST" and path == "rpc/save_vehicle_registry"
+        inventory_mutation = request.method != "GET" and not registry_mutation and (path.startswith("inventory_") or path.startswith("rpc/"))
         try:
             actor = None
             if inventory_mutation:
                 self.attempts.append(dict(path=path, method=request.method, data=copy.deepcopy(data), headers=dict(request.headers)))
                 actor = self.actor(request, data)
+            if registry_mutation:
+                self.vehicle_attempts.append(copy.deepcopy(data))
+                actor = self.actor(request,data)
             if path == "vehicles" and request.method == "GET":
-                result = REGISTRY
+                result = self.vehicles
+            elif path == "rpc/save_vehicle_registry" and request.method == "POST":
+                result = self.save_vehicle(data,actor)
             elif path == "inventory_carts" and request.method == "GET":
                 result = CARTS
             elif path == "inventory_events":
@@ -951,6 +982,55 @@ def run_checks(page, backend):
         page.evaluate("(key)=>openOperationalForm(key)", key)
         assert_handlers(page)
 
+    # Administrative vehicle changes are shared and preserve stable history keys.
+    page.evaluate("openAdminAssistant()")
+    page.get_by_role("button",name=re.compile("^Vehicle Registry")).click()
+    page.wait_for_selector("#adminVehicles.active")
+    page.wait_for_function("vehicleAdminReady")
+    page.fill("#vehicleAdminSearch","Phoenix")
+    assert "#69x" in page.locator("#vehicleAdminList").inner_text()
+    assert "Hulk" not in page.locator("#vehicleAdminList").inner_text()
+    page.locator("#vehicleAdminList .inventory-card").click()
+    assert page.input_value("#vehicleAdminName") == "Phoenix"
+    assert page.input_value("#vehicleAdminDesignation") == "69x"
+    assert page.evaluate("vehicleAdminCurrent.vehicle_code") == "E92-HULK"
+    page.evaluate("openVehicleAdmin()")
+    page.locator("#vehicleAdminNew").click()
+    page.fill("#vehicleAdminName","Registry browser test")
+    page.fill("#vehicleAdminDesignation","#77x")
+    attempts=len(backend.vehicle_attempts)
+    page.evaluate("saveVehicleAdmin()")
+    assert len(backend.vehicle_attempts)==attempts
+    page.fill("#vehicleAdminInitials"," ab ")
+    page.evaluate("saveVehicleAdmin()")
+    new_vehicle=next(v for v in backend.vehicles if v["vehicle_name"]=="Registry browser test")
+    assert new_vehicle["designation"]=="77x" and new_vehicle["revision"]==1
+    assert backend.vehicle_events[-1]["actor_initials"]=="AB"
+    assert page.input_value("#vehicleAdminInitials")==""
+    attempts=len(backend.vehicle_attempts)
+    page.evaluate("toggleVehicleAdmin()")
+    assert len(backend.vehicle_attempts)==attempts
+    page.fill("#vehicleAdminInitials","rm")
+    page.evaluate("toggleVehicleAdmin()")
+    assert new_vehicle["is_active"] is False
+    assert page.evaluate("(code)=>vehicleOptionsForCategory('E92').some(v=>v.vehicle_code===code)",new_vehicle["vehicle_code"]) is False
+    open_use(page,"E92-FLAGS")
+    assert new_vehicle["vehicle_code"] not in page.locator("#usePartVehicle option").evaluate_all("els=>els.map(e=>e.value)")
+    page.evaluate("openVehicleAdmin()")
+    page.evaluate("(code)=>editVehicleAdmin(code)",new_vehicle["vehicle_code"])
+    page.fill("#vehicleAdminInitials","rs")
+    page.evaluate("toggleVehicleAdmin()")
+    assert new_vehicle["is_active"] is True
+    assert page.evaluate("(code)=>vehicleOptionsForCategory('E92').some(v=>v.vehicle_code===code)",new_vehicle["vehicle_code"])
+    page.fill("#vehicleAdminName","Renamed registry vehicle")
+    page.fill("#vehicleAdminInitials","ed")
+    page.evaluate("saveVehicleAdmin()")
+    assert new_vehicle["vehicle_name"]=="Renamed registry vehicle"
+    page.screenshot(path=str(OUTPUT / "vehicle-admin-editor.png"),full_page=True)
+    page.fill("#vehicleAdminInitials","rm")
+    page.evaluate("toggleVehicleAdmin()")
+    assert new_vehicle["is_active"] is False and len(backend.vehicle_events)==5
+
     # Fresh document avoids rapid synthetic history resets contaminating the real click/back path.
     page.goto(base_url)
     page.wait_for_function("vehicleRegistryReady")
@@ -972,7 +1052,7 @@ def run_checks(page, backend):
         if screen != "home":
             page.locator("#globalHomeButton").click()
         page.wait_for_selector("#home.active")
-    return dict(result="PASS", chassis_bin_sequence="PASS", shared_chassis_compatibility="PASS", screens_with_home_navigation=len(screens), crew_search_first="PASS", combined_location_bin="PASS", exact_vehicle_selection="PASS",
+    return dict(result="PASS", vehicle_administration="PASS", chassis_bin_sequence="PASS", shared_chassis_compatibility="PASS", screens_with_home_navigation=len(screens), crew_search_first="PASS", combined_location_bin="PASS", exact_vehicle_selection="PASS",
                 known_null_and_zero_use="PASS", explicit_initials_all_paths="PASS", use_retry_idempotency="PASS",
                 pending_use_navigation="PASS", read_only_activity_history="PASS",
                 management_and_fast_move="PASS", ledger_events=len(backend.events), successful_inventory_requests=len(backend.writes),

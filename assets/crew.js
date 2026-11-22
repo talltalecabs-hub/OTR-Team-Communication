@@ -34,7 +34,7 @@ function inventoryOperationId(){
 
 function crewVehicleLabel(vehicle){
   const designation=String(vehicle.designation||"").trim();
-  const number=/^\d+$/.test(designation)?`#${designation} `:"";
+  const number=/^\d+[a-z]?$/i.test(designation)?`#${designation} `:"";
   return `${number}${vehicle.vehicle_name}${designation && !number?` — ${designation}`:""} • ${vehicle.platform}`;
 }
 
@@ -47,7 +47,7 @@ function renderUsePartVehicleOptions(){
   const select=document.getElementById("usePartVehicle");
   const previous=select.value;
   const showAll=document.getElementById("showAllUseVehicles").checked;
-  const rows=vehicleRegistry.filter(vehicle=>showAll||compatibleUseVehicle(vehicle,inventoryUseItem));
+  const rows=vehicleRegistry.filter(vehicle=>vehicle.is_active!==false&&(showAll||compatibleUseVehicle(vehicle,inventoryUseItem)));
   select.innerHTML='<option value="">Choose car # / exact vehicle…</option>'+rows.map(vehicle=>`<option value="${escapeHtml(vehicle.vehicle_code)}">${escapeHtml(crewVehicleLabel(vehicle))}</option>`).join("");
   select.value=rows.some(vehicle=>vehicle.vehicle_code===previous)?previous:"";
   document.getElementById("useVehicleHint").textContent=showAll?"All vehicles in the shared registry.":rows.length?"Vehicles matching this part's platform and compatibility.":"No matching vehicles. Select Show all vehicles to choose from the shared registry.";
@@ -105,7 +105,7 @@ async function finishUsePart(){
   if(!inventoryUseRequest){
     const initials=inventoryInitials("usePartInitials");
     if(!initials) return;
-    const vehicle=vehicleRegistry.find(row=>row.vehicle_code===document.getElementById("usePartVehicle").value);
+    const vehicle=vehicleRegistry.find(row=>row.is_active!==false&&row.vehicle_code===document.getElementById("usePartVehicle").value);
     if(!vehicle){status.textContent="Select a car # / exact vehicle.";document.getElementById("usePartVehicle").focus();return;}
     const rawQuantity=document.getElementById("usePartQty").value.trim();
     const quantity=Number(rawQuantity);

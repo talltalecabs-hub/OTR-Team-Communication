@@ -36,7 +36,7 @@ const fallbackVehicleRegistry = [
   {vehicle_code:"F30-HALF-AND-HALF",platform:"F30",vehicle_name:"Half and Half 428i",designation:"70 / Street",status:"Street",display_order:50},
   {vehicle_code:"E92-CHERRY",platform:"E92",vehicle_name:"Cherry",designation:"64",status:"Active",display_order:10},
   {vehicle_code:"E92-ACID-TRIP",platform:"E92",vehicle_name:"Acid Trip",designation:"67",status:"Active",display_order:20},
-  {vehicle_code:"E92-HULK",platform:"E92",vehicle_name:"Hulk",designation:"63",status:"Deceased",display_order:30},
+  {vehicle_code:"E92-HULK",platform:"E92",vehicle_name:"Phoenix",designation:"69x",status:"Active",display_order:30},
   {vehicle_code:"E92-HIGH-BOI",platform:"E92",vehicle_name:"High Boi",designation:"Street",status:"Street",display_order:40},
   {vehicle_code:"E92-PRINCE",platform:"E92",vehicle_name:"Prince",designation:"69",status:"Active",display_order:50},
   {vehicle_code:"M235-RAPTOR",platform:"M235 / M235iR",vehicle_name:"Raptor",designation:"62",status:"Active",display_order:10},
@@ -375,12 +375,12 @@ function vehicleDisplayLabel(vehicle){
   if(!vehicle) return "";
   const name=String(vehicle.vehicle_name||"").trim();
   const designation=String(vehicle.designation||"").trim();
-  return designation ? `${name} — ${designation}` : name;
+  return designation ? `${name} — ${/^\d+[a-z]?$/i.test(designation)?"#":""}${designation}` : name;
 }
 
 function vehicleOptionsForCategory(category){
   return vehicleRegistry
-    .filter(vehicle=>vehicle.platform===category)
+    .filter(vehicle=>vehicle.platform===category&&vehicle.is_active!==false)
     .sort((a,b)=>Number(a.display_order||0)-Number(b.display_order||0)
       || String(a.vehicle_name||"").localeCompare(String(b.vehicle_name||"")));
 }
@@ -414,19 +414,21 @@ function refreshOperationalVehicleOptions(){
 async function loadVehicleRegistry(){
   try{
     const response=await fetch(
-      `${SUPABASE_URL}/rest/v1/vehicles?select=vehicle_code,platform,vehicle_name,designation,status,display_order&order=platform,display_order,vehicle_name`,
+      `${SUPABASE_URL}/rest/v1/vehicles?select=*&order=platform,display_order,vehicle_name`,
       {headers:{"apikey":SUPABASE_KEY}}
     );
     if(!response.ok) throw new Error(`Vehicle registry read failed: ${response.status}`);
     const rows=await response.json();
-    if(Array.isArray(rows) && rows.length){
+    if(Array.isArray(rows)){
       vehicleRegistry=rows;
       vehicleRegistryReady=true;
     }
   }catch(err){
+    vehicleRegistryReady=false;
     console.warn("Vehicle registry unavailable; using bundled registry.",err);
   }
   refreshOperationalVehicleOptions();
+  return vehicleRegistryReady;
 }
 
 function operationalFieldHtml(field){

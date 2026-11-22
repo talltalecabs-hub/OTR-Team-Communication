@@ -1,0 +1,24 @@
+{
+  "instruction": "Replace Hulk with Phoenix #69x",
+  "date": "2026-11-20",
+  "before_state": {
+    "status": "Deceased",
+    "platform": "E92",
+    "created_at": "2026-08-28T18:20:57.78192+00:00",
+    "updated_at": "2026-08-28T18:20:57.78192+00:00",
+    "designation": "63",
+    "vehicle_code": "E92-HULK",
+    "vehicle_name": "Hulk",
+    "display_order": 30
+  },
+  "after_state": {
+    "status": "Active",
+    "platform": "E92",
+    "created_at": "2026-08-28T18:20:57.78192+00:00",
+    "updated_at": "2026-11-20T20:22:22.304582+00:00",
+    "designation": "69x",
+    "vehicle_code": "E92-HULK",
+    "vehicle_name": "Phoenix",
+    "display_order": 30
+  }
+}
