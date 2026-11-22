@@ -113,6 +113,7 @@ class Backend:
         self.errors = []
         self.use_requests = {}
         self.offline_submissions = False
+        self.lose_next_bin_response = False
         self.lose_next_use_response = False
         self.hold_next_use_response = False
         self.held_use_response = None
@@ -342,10 +343,15 @@ class Backend:
                 if request.method == "GET":
                     result = sorted(self.bins, key=lambda row: row["bin_code"])
                 elif request.method == "POST":
-                    physical_bin = dict(copy.deepcopy(data), id=self.new_id())
+                    physical_bin = dict(copy.deepcopy(data), id=data.get("id") or self.new_id())
                     self.bins.append(physical_bin)
                     self.event("bin_created", actor, None, physical_bin)
                     result = [physical_bin]
+                    if self.lose_next_bin_response:
+                        self.lose_next_bin_response=False
+                        self.writes.append(self.attempts[-1])
+                        route.abort("connectionreset")
+                        return
                 elif request.method == "PATCH":
                     bin_id = query.get("id", [""])[0].removeprefix("eq.")
                     physical_bin = next(row for row in self.bins if row["id"] == bin_id)
@@ -725,7 +731,8 @@ def run_checks(page, backend):
     page.fill("#addItemName", "New shop hose")
     page.fill("#addQty", "2")
     page.fill("#addCategory", "Cooling")
-    page.select_option("#addPlatform", "E92")
+    page.select_option("#addPlatform", "F30")
+    page.locator('#addCompatibleChassis input[value="F22"]').check()
     page.select_option("#addLocation", "Backstock")
     assert_no_request(backend, lambda: page.evaluate("addInventoryItem()"))
     page.fill("#addInitials", "ns")
@@ -733,19 +740,39 @@ def run_checks(page, backend):
     added = next(item for item in backend.items if item["item_name"] == "New shop hose")
     assert added["stock_category"] == "Backstock" and added["quantity"] == 2
     assert backend.events[-1]["event_type"] == "add_stock" and backend.events[-1]["actor_initials"] == "NS"
+    assert set(added["compatibility"])=={"F22","F30"}
+    shared_identity=added["id"]
+    writes_before_search=len(backend.writes)
+    for chassis in ["F22","F30","M235 / M235iR"]:
+        page.evaluate("(chassis)=>browseInventory(chassis,'Backstock')",chassis)
+        assert "New shop hose" in page.locator("#inventoryResults").inner_text()
+        matching=page.evaluate("inventoryData.filter(i=>i.item_name==='New shop hose').map(i=>({id:i.id,quantity:i.quantity}))")
+        assert matching==[{"id":shared_identity,"quantity":2}]
+    assert len(backend.writes)==writes_before_search
+    page.evaluate("(key)=>openInventoryDetail(key,'none',true)",added["inventory_code"])
+
+    before_another = len(backend.writes)
+    page.locator("#addAnotherPartButton").click()
+    page.wait_for_selector("#inventoryAdd.active")
+    assert page.input_value("#addItemName") == page.input_value("#addPartNumber") == page.input_value("#addNotes") == page.input_value("#addInitials") == ""
+    assert page.input_value("#addQty") == "1"
+    assert page.locator("#addItemName").evaluate("el=>el===document.activeElement")
+    assert len(backend.writes) == before_another
+
 
     # Every bin creation and cart movement has its own initials field and audit event.
     page.evaluate("openLabelAssistant()")
     page.evaluate("openCreateBin()")
     page.select_option("#binMake", "BMW")
     page.select_option("#binModel", "E92")
+    assert page.input_value("#binCodePreview")=="E92-023"
     page.select_option("#binSystem", "Cooling")
     page.select_option("#binSubsystem", "Hoses / plumbing")
     page.select_option("#binCartLocation", "A")
     assert_no_request(backend, lambda: page.evaluate("createInventoryBin()"))
     page.fill("#binCreateInitials", "bc")
     page.evaluate("createInventoryBin()")
-    created_bin = next(row for row in backend.bins if row["bin_code"].startswith("B-E92-COOL-HOSE"))
+    created_bin = next(row for row in backend.bins if row["bin_code"] == "E92-023")
     assert backend.events[-1]["event_type"] == "bin_created"
     page.locator("#binManagementControls summary").click()
     page.select_option("#binCartLocationSelect", "B")
@@ -753,6 +780,69 @@ def run_checks(page, backend):
     page.fill("#binCartInitials", "cm")
     page.evaluate("saveBinCartLocation()")
     assert created_bin["cart_location"] == "B" and backend.events[-1]["event_type"] == "bin_moved"
+    # Manual IDs retain the chassis format; classification does not rewrite them.
+    page.evaluate("openCreateBin()")
+    page.select_option("#binMake","BMW")
+    page.select_option("#binModel","E92")
+    assert page.input_value("#binCodePreview")=="E92-024"
+    page.fill("#binCodePreview","e92-30")
+    page.select_option("#binSystem","Miscellaneous")
+    assert page.input_value("#binCodePreview")=="E92-30"
+    page.fill("#binCreateInitials","bn")
+    page.evaluate("createInventoryBin()")
+    assert next(row for row in backend.bins if row["bin_code"]=="E92-030")["qr_value"]=="OTR:BIN:E92-030"
+    page.evaluate("openCreateBin()")
+    page.select_option("#binMake","BMW")
+    page.select_option("#binModel","E92")
+    page.select_option("#binSystem","Miscellaneous")
+    page.fill("#binCodePreview","E92-023")
+    page.fill("#binCreateInitials","bn")
+    assert_no_request(backend,lambda:page.evaluate("createInventoryBin()"))
+    page.fill("#binCodePreview","F30-050")
+    assert_no_request(backend,lambda:page.evaluate("createInventoryBin()"))
+    page.evaluate("useNextBinCode()")
+    assert page.input_value("#binCodePreview")=="E92-031"
+    page.evaluate("createInventoryBin()")
+    assert any(row["bin_code"]=="E92-031" for row in backend.bins)
+    assert page.evaluate("nextBinCode('F22')")=="F22-002"
+    assert page.evaluate("nextBinCode('F30')")=="F30-003"
+    assert page.evaluate("nextBinCode('986')")=="986-001"
+    # A completed save with a lost response reopens the same stable bin on retry.
+    page.evaluate("openCreateBin()")
+    page.select_option("#binMake","BMW")
+    page.select_option("#binModel","E92")
+    page.select_option("#binSystem","Miscellaneous")
+    page.fill("#binCreateInitials","bn")
+    before_bins=len(backend.bins)
+    backend.lose_next_bin_response=True
+    page.evaluate("createInventoryBin()")
+    assert len(backend.bins)==before_bins+1
+    attempts=len(backend.attempts)
+    page.evaluate("createInventoryBin()")
+    assert len(backend.bins)==before_bins+1 and len(backend.attempts)==attempts
+    assert "E92-032" in page.locator("#binDetailWrap").inner_text()
+
+
+    # Sharing an existing part changes compatibility only, never stock or placement.
+    open_item(page,"F30-LOOSE-A")
+    shared_before=copy.deepcopy(backend.item("F30-LOOSE-A"))
+    page.fill("#inventoryDetailNotes","Unsaved note remains")
+    page.locator('#detailCompatibleChassis input[value="F22"]').check()
+    assert_no_request(backend,lambda:page.evaluate("saveInventoryCompatibility()"))
+    page.fill("#inventoryDetailInitials","sh")
+    page.evaluate("saveInventoryCompatibility()")
+    shared=backend.item("F30-LOOSE-A")
+    assert set(shared["compatibility"])=={"F22","F30"}
+    for key,value in shared_before.items():
+        if key not in ["compatibility","updated_at"]:assert shared[key]==value,key
+    assert page.input_value("#inventoryDetailNotes")=="Unsaved note remains"
+    assert backend.events[-1]["event_type"]=="metadata_changed"
+    page.evaluate('browseInventory("F22")')
+    assert "Loose rotor A" in page.locator("#inventoryResults").inner_text()
+    open_use(page,"F30-LOOSE-A")
+    compatible_options=page.locator("#usePartVehicle option").evaluate_all("els=>els.map(e=>e.value)")
+    assert "F30-GOLDIE" in compatible_options and "M235-RAPTOR" in compatible_options
+
 
     # Fast Move follows inventory type -> chassis -> cart -> matching bin, preserving units.
     before_move_quantity = sum(item["quantity"] or 0 for item in backend.items)
@@ -962,7 +1052,7 @@ def run_checks(page, backend):
         if screen != "home":
             page.locator("#globalHomeButton").click()
         page.wait_for_selector("#home.active")
-    return dict(result="PASS", vehicle_administration="PASS", screens_with_home_navigation=len(screens), crew_search_first="PASS", combined_location_bin="PASS", exact_vehicle_selection="PASS",
+    return dict(result="PASS", vehicle_administration="PASS", chassis_bin_sequence="PASS", shared_chassis_compatibility="PASS", screens_with_home_navigation=len(screens), crew_search_first="PASS", combined_location_bin="PASS", exact_vehicle_selection="PASS",
                 known_null_and_zero_use="PASS", explicit_initials_all_paths="PASS", use_retry_idempotency="PASS",
                 pending_use_navigation="PASS", read_only_activity_history="PASS",
                 management_and_fast_move="PASS", ledger_events=len(backend.events), successful_inventory_requests=len(backend.writes),
