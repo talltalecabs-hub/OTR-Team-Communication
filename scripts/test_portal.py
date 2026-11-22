@@ -761,14 +761,14 @@ def run_checks(page, backend):
     assert page.locator("#labelPrintCanvas .part-tag-face").count() == 1
     assert page.locator("#labelPrintCanvas .part-fold-sheet, #labelPrintCanvas .rotate").count() == 0
     dimensions = page.locator("#labelPrintCanvas").bounding_box()
-    assert dimensions["width"] == 192 and dimensions["height"] == 96
+    assert abs(dimensions["width"] - 50*96/25.4) < .5 and abs(dimensions["height"] - 25*96/25.4) < .5
     face = page.locator("#labelPrintCanvas .part-tag-face")
     human_text = face.inner_text()
     assert human_text and human_text == human_text.upper(), human_text
     assert face.locator(".label-code39").count() == 1
     assert face.get_attribute("data-tag-id") == added["tag_id"]
-    assert "2×1" in page.locator("#labelPrintButton").inner_text()
-    assert_label_pdf(page, "part-label-2x1.pdf", 144, 72)
+    assert "25×50 mm" in page.locator("#labelPrintButton").inner_text()
+    assert_label_pdf(page, "part-label-50x25mm.pdf", 50*72/25.4, 25*72/25.4)
     tag = added["tag_id"]
     before_tag_events = len(backend.events)
     page.evaluate("preparePartTag()")
@@ -798,7 +798,7 @@ def run_checks(page, backend):
     assert "TAG-E92-002-L249-C599823B" in lineage_face.locator(".label-code39").get_attribute("aria-label")
     assert backend.item("E92-002-L249") == lineage_before_label
     assert backend.item("E92-002-L249")["source_metadata"]["source_row"] == 249
-    assert_label_pdf(page, "lineage-part-label-2x1.pdf", 144, 72)
+    assert_label_pdf(page, "lineage-part-label-50x25mm.pdf", 50*72/25.4, 25*72/25.4)
     page.evaluate('openBinLabel("E92-002")')
     assert page.locator("#labelPrintCanvas .bin-label-sheet").count() == 1
     assert page.locator("#labelPrintCanvas .part-tag-face").count() == 0
@@ -806,6 +806,23 @@ def run_checks(page, backend):
     dimensions = page.locator("#labelPrintCanvas").bounding_box()
     assert dimensions["width"] == 384 and dimensions["height"] == 576
     assert_label_pdf(page, "bin-label-4x6.pdf", 288, 432)
+    options=page.locator("#labelMediaSelect option").evaluate_all("els=>els.map(e=>e.value)")
+    assert options == ["inch4x6", "metric25x50", "metric150x100"]
+    for media, width, height in [("metric25x50",50*72/25.4,25*72/25.4),("metric150x100",150*72/25.4,100*72/25.4)]:
+        before_media_events=len(backend.events)
+        page.select_option("#labelMediaSelect",media)
+        assert_label_pdf(page,f"bin-label-{media}.pdf",width,height)
+        assert len(backend.events)==before_media_events
+    page.select_option("#labelMediaSelect","inch4x6")
+    page.evaluate('openPartTag("E92-002-L249")')
+    page.evaluate("preparePartTag()")
+    for media, width, height in [("inch4x6",288,432),("metric150x100",150*72/25.4,100*72/25.4)]:
+        page.select_option("#labelMediaSelect",media)
+        assert page.locator("#labelPrintCanvas .part-tag-face").count()==1
+        assert page.locator(".part-tag-face").get_attribute("data-tag-id")=="TAG-E92-002-L249-C599823B"
+        assert_label_pdf(page,f"part-label-{media}.pdf",width,height)
+    page.select_option("#labelMediaSelect","metric25x50")
+
 
     # Registered bins, loose containers on both carts, and UUID-only contents remain intact.
     page.evaluate('browseInventory("F30")')
@@ -887,7 +904,7 @@ def run_checks(page, backend):
                 pending_use_navigation="PASS", read_only_activity_history="PASS",
                 management_and_fast_move="PASS", ledger_events=len(backend.events), successful_inventory_requests=len(backend.writes),
                 submissions_and_offline_queue="PASS", exact_bin_contents="PASS", current_bin_search_single_column="PASS",
-                direct_notes_and_not_found="PASS", part_2x1_uppercase_label="PASS", preserved_4x6_bin_label="PASS")
+                direct_notes_and_not_found="PASS", part_uppercase_label="PASS", three_label_media_sizes="PASS", preserved_4x6_bin_label="PASS")
 
 
 backend = Backend()

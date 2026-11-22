@@ -951,16 +951,31 @@ function labelScanBlock(value){
   return `<div class="label-scan-block">${code39Svg(data)}<div class="label-scan-id">${escapeHtml(data)}</div></div>`;
 }
 
-function partFaceHtml(item){
+const LABEL_MEDIA={
+  inch4x6:{name:"4×6 in",width:"4in",height:"6in",page:"otr-bin",small:false},
+  metric25x50:{name:"25×50 mm",width:"50mm",height:"25mm",page:"otr-small",small:true},
+  metric150x100:{name:"150×100 mm",width:"150mm",height:"100mm",page:"otr-metric",small:false}
+};
+function labelMediaFor(payload){
+  if(LABEL_MEDIA[payload.media_id]) return payload.media_id;
+  return payload.type==="bin"?"inch4x6":"metric25x50";
+}
+function changeLabelMedia(value){
+  if(!currentLabelPayload || !LABEL_MEDIA[value]) return;
+  currentLabelPayload.media_id=value;
+  renderLabelPreview();
+}
+
+function partFaceHtml(item,large=false){
   // Uppercase presentation only. Stored inventory/tag/source identity is untouched.
   const upper=value=>labelSafeText(value).toUpperCase();
   const code=item.tag_id||stablePartTagId(item);
   const bin=inventoryItemBinDisplayLabel(item);
   const placement=`${inventoryItemLocationLabel(item)} • ${bin}`;
   const name=upper(item.item_name||"Inventory Item");
-  const size=name.length>50?"7pt":name.length>32?"8pt":"9pt";
+  const size=large?(name.length>50?"22pt":name.length>32?"26pt":"32pt"):(name.length>50?"7pt":name.length>32?"8pt":"9pt");
   return `<div class="part-tag-face" data-tag-id="${escapeHtml(code)}">
-    <div class="part-tag-brand">OTR PART</div>
+    <div class="part-tag-brand">${item.workspace_draft?"DRAFT • OTR PART":"OTR PART"}</div>
     <div class="part-tag-name" style="font-size:${size}">${escapeHtml(name)}</div>
     <div class="part-tag-location">${escapeHtml(upper(placement))}</div>
     <div class="part-tag-quantity">QTY ${escapeHtml(upper(inventoryQuantityLabel(item)))}</div>
@@ -985,19 +1000,27 @@ function renderLabelPreview(){
   const wrap=document.getElementById("labelPrintCanvas");
   const note=document.getElementById("labelPrintNote");
   const button=document.getElementById("labelPrintButton");
+  const select=document.getElementById("labelMediaSelect");
   if(!wrap||!currentLabelPayload) return;
   const part=currentLabelPayload.type==="part";
+  const mediaId=labelMediaFor(currentLabelPayload);
+  const media=LABEL_MEDIA[mediaId];
+  currentLabelPayload.media_id=mediaId;
+  document.body.dataset.labelMedia=mediaId;
+  document.body.style.setProperty("--label-width",media.width);
+  document.body.style.setProperty("--label-height",media.height);
   document.body.classList.toggle("print-part-label",part);
   wrap.classList.toggle("part-label-canvas",part);
-  if(!part){
-    wrap.innerHTML=binLabelHtml(currentLabelPayload.bin);
-    if(note) note.textContent="4×6 bin label • browser print preview";
-    if(button) button.textContent="Print 4×6 Bin Label";
-  }else{
-    wrap.innerHTML=partFaceHtml(currentLabelPayload.item);
-    if(note) note.textContent="Single 2×1 part label • placeholder barcode";
-    if(button) button.textContent="Print 2×1 Part Label";
+  wrap.classList.toggle("small-label-canvas",media.small);
+  wrap.classList.toggle("large-label-canvas",!media.small);
+  wrap.classList.toggle("metric-label-canvas",mediaId==="metric150x100");
+  if(select){
+    select.innerHTML=Object.entries(LABEL_MEDIA).map(([id,profile])=>`<option value="${id}">${profile.name}${id==="metric25x50"?" — 50 mm wide × 25 mm high":""}</option>`).join("");
+    select.value=mediaId;
   }
+  wrap.innerHTML=part?partFaceHtml(currentLabelPayload.item,!media.small):binLabelHtml(currentLabelPayload.bin);
+  if(note) note.textContent=`${media.name} ${part?"part":"bin"} label • ${media.width} wide × ${media.height} high`;
+  if(button) button.textContent=`Print ${media.name} Label`;
 }
 
 function printCurrentLabel(){

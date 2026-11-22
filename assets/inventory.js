@@ -305,6 +305,7 @@ function openInventoryItemManagement(historyMode="push"){
         <button class="secondary" type="button" onclick="changeInventoryStockCategory('${inventoryStockCategoryLabel(item)==="Mobile"?"Backstock":"Mobile"}')">Move to ${inventoryStockCategoryLabel(item)==="Mobile"?"Backstock":"Mobile"}</button>
         <button class="secondary" type="button" onclick="markInventoryNeedsReview()">Needs Review</button>
         <button class="danger" type="button" onclick="markInventoryNotFound()">Not Found</button>
+        <button class="secondary" type="button" onclick="copyInventoryToWorkspace()">Duplicate to Workspace</button>
         <button class="secondary" type="button" onclick="openPartTag('${escapeHtml(String(item.local_key)).replace(/'/g,"&#39;")}')">Print Part Tag</button>
       </div>
       <p class="small">Enter initials here for flag and stock-category changes. Placement, count, and tag changes ask for initials on their own screen.</p>
@@ -429,7 +430,10 @@ async function markInventoryNotFound(fieldId="inventoryActionInitials"){
     }else showPortalNavNotice("Inventory marked Not Found.");
   }else if(currentInventoryItem?.id===item.id && document.getElementById("inventoryItemManagement").classList.contains("active")) openInventoryItemManagement("replace");
 }
-async function openAddInventory(){
+function openAddInventory(){
+  return openInventoryWorkspace({newCard:true});
+}
+async function openLegacyAddInventory(){
   if(!inventoryBinsReady||!inventoryCartsReady) await Promise.all([loadInventoryBins(),loadInventoryCarts()]);
   ["addItemName","addCategory","addPartNumber","addAssignedVehicle","addNotes"].forEach(id=>{const el=document.getElementById(id);if(el)el.value="";});
   document.getElementById("addQty").value=1;

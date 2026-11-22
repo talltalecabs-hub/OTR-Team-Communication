@@ -200,6 +200,7 @@
     <button class="secondary back" type="button" onclick="portalBack('inventoryHome')">← Inventory Assistant</button>
     <h2 class="sectiontitle">Inventory Management</h2>
     <div class="grid">
+      <button type="button" class="bigbtn live-feature accent" onclick="openInventoryWorkspace()"><strong>Creation Workspace</strong><span>Photos, drafts, duplicate, move, and print — in any order.</span></button>
       <button type="button" class="bigbtn live-feature" onclick="browseInventory('ALL','Backstock')"><strong>Backstock</strong><span>Search inventory that stays at the shop.</span></button>
       <button type="button" class="bigbtn live-feature" onclick="browseInventory('ALL','ALL')"><strong>Search All Inventory</strong><span>Search Mobile and Backstock; open a part for corrections and flags.</span></button>
       <button type="button" class="bigbtn live-feature" onclick="openAddInventory()"><strong>＋ Add Part</strong><span>Add newly found or acquired stock.</span></button>
@@ -207,6 +208,25 @@
       <button type="button" class="bigbtn live-feature" onclick="openAssignPartToBin()"><strong>Fast Move</strong><span>Choose inventory type, chassis, cart, bin, and quantity.</span></button>
       <button type="button" class="bigbtn live-feature" onclick="openInventoryEventHistory()"><strong>Inventory Activity</strong><span>Review who changed stock and where parts were used.</span></button>
     </div>
+  </section>
+
+  <section id="inventoryWorkspace" class="screen">
+    <button class="secondary back" type="button" onclick="portalBack('inventoryManagement')">← Inventory Management</button>
+    <div class="workspace-heading"><div><h2 class="sectiontitle">Parts &amp; Labels</h2><p class="subtitle">Start anywhere. Leave a card unfinished. Pick it up on any device.</p></div><div class="workspace-actor"><label for="workspaceInitials">Initials</label><input id="workspaceInitials" class="inventory-initials" maxlength="8" autocomplete="off" autocapitalize="characters" placeholder="To save shared work" oninput="workspaceActorChanged()" /></div></div>
+    <div class="workspace-toolbar">
+      <button class="primary" type="button" onclick="workspaceCreateCard()">＋ New Card</button>
+      <label class="workspace-photo-add">＋ Add Photos<input id="workspaceIntakePhotos" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple onchange="workspaceIntakeFiles(this)" /></label>
+      <button id="workspaceDuplicateButton" class="secondary" type="button" onclick="workspaceDuplicateCard()" disabled>Duplicate</button>
+      <button class="secondary" type="button" onclick="workspaceReload()">Refresh Shared Work</button>
+      <div class="workspace-zoom"><button class="secondary" type="button" onclick="workspaceZoom(-0.1)" aria-label="Zoom out">−</button><span id="workspaceZoomValue">100%</span><button class="secondary" type="button" onclick="workspaceZoom(0.1)" aria-label="Zoom in">＋</button></div>
+    </div>
+    <label class="checkrow"><input id="workspaceShowArchived" type="checkbox" onchange="workspaceToggleArchived(this.checked)" /><span>Show archived cards</span></label>
+    <p id="workspaceStatus" class="small" role="status" aria-live="polite">Loading shared drafts…</p>
+    <div class="workspace-layout">
+      <div id="workspaceViewport" class="workspace-viewport" tabindex="0" aria-label="Part workspace. Drag the background to pan. Drag card headers or use arrow keys to move cards."><div id="workspaceCanvas" class="workspace-canvas"></div></div>
+      <aside id="workspaceInspector" class="workspace-inspector card"><h3>Your working space</h3><p>Create a card or select one on the board. Drag a card by its title to move it.</p><p class="small">Drafts do not change inventory counts. Photos and edits save to the shared workspace.</p></aside>
+    </div>
+    <div class="actions"><button class="secondary" type="button" onclick="openLegacyAddInventory()">Detailed Add Form</button></div>
   </section>
 
   <section id="inventoryMobile" class="screen">
@@ -611,6 +631,7 @@
     <button class="secondary back no-print" type="button" onclick="portalBack('labelAssistantHome')">← Back</button>
     <h2 class="sectiontitle no-print">Label Preview</h2>
     <p id="labelPrintNote" class="subtitle no-print">4×6 thermal label</p>
+    <div class="no-print" style="margin-bottom:16px"><label for="labelMediaSelect">Label stock</label><select id="labelMediaSelect" onchange="changeLabelMedia(this.value)"><option value="inch4x6">4×6 in</option><option value="metric25x50">25×50 mm</option><option value="metric150x100">150×100 mm</option></select></div>
     <div class="label-preview-shell">
       <div id="labelPrintCanvas" class="label-print-canvas"></div>
     </div>
@@ -868,6 +889,7 @@
 <script src="assets/inventory.js?v=1.3.0"></script>
 <script src="assets/labels.js?v=1.3.0"></script>
 <script src="assets/crew.js?v=1.3.0"></script>
+<script src="assets/workspace.js?v=1.3.0"></script>
 <script src="assets/bootstrap.js?v=1.3.0"></script>
 </body>
 </html>
