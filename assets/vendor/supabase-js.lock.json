@@ -1,0 +1,9 @@
+{
+  "package": "@supabase/supabase-js",
+  "version": "2.119.2",
+  "tarball": "https://registry.npmjs.org/@supabase/supabase-js/-/supabase-js-2.119.2.tgz",
+  "integrity": "sha512-4HvF4G2DwdqjmwPBpz9RHnXWfdK0wSkw4yBhxe64CdeF8gdxsTF9WZuHFuNWtQnHllq71ZDyAghr4Q8nC0m/NA==",
+  "browser_bundle": "supabase-js-2.119.2.js",
+  "sha256": "8816af04d9915dbba1882d6f84f0b402dc40268063a63d9c66d24f52f371c263",
+  "modified": false
+}

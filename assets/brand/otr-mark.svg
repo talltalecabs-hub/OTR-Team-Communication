@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 310 88" role="img" aria-label="Open Throttle Racing">
+<path fill="#b7ff22" d="M15 25C89 3 184-6 223 7c31 11 17 29-19 37 19-12 29-23 5-27C160 7 74 14 15 25Z"/>
+<g fill="#111512" transform="skewX(-13)"><path fill-rule="evenodd" d="M43 31h48c16 0 23 8 23 21 0 19-12 29-33 29H39c-16 0-23-8-23-21 0-20 11-29 27-29Zm7 14c-7 0-11 5-11 13 0 6 3 9 10 9h29c8 0 12-5 12-13 0-6-4-9-10-9Z"/><path d="M113 31h76v14h-25v36h-26V45h-25Z"/><path fill-rule="evenodd" d="M190 31h48c19 0 29 5 29 17 0 9-6 15-18 17l20 16h-34l-17-15h-3v15h-25Zm25 13v10h19c6 0 9-2 9-5s-3-5-9-5Z"/></g>
+<g fill="#111512" transform="translate(267 43) skewX(-18)"><path d="M0 0h13v13H0Zm13 13h13v13H13ZM26 0h13v13H26Z"/></g></svg>

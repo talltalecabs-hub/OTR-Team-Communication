@@ -16,7 +16,7 @@ function workspaceStatus(message=''){
   status.textContent=!workspace.ready?'Shared workspace unavailable. Refresh to retry.':workspace.errors.size?'A card needs attention. Select it to review the save error.':workspace.uploadError?workspace.uploadError:workspace.createRequest&&!workspace.creating?'New card not confirmed. Choose New Card to retry the same request.':workspace.uploading?`Uploading ${workspace.uploading} photo(s)…`:pending?'Saving shared work…':`${[...workspace.rows.values()].filter(row=>row.state==='draft').length} shared draft(s) • ${workspaceActor(false)?'All changes saved':'Enter initials to create or change cards'}`;
 }
 async function workspaceRequest(name,data,actor){
-  const response=await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`,{method:'POST',headers:inventoryEventHeaders(actor),body:JSON.stringify(data)});
+  const response=await portalFetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`,{method:'POST',headers:inventoryEventHeaders(actor),body:JSON.stringify(data)});
   const result=await response.json();
   if(!response.ok){const error=new Error(result.message||'Unable to save shared work.');error.code=result.code;error.status=response.status;throw error;}
   return result;
@@ -56,6 +56,7 @@ async function workspaceFlush(id){
       workspace.rows.set(id,saved);
       return true;
     }catch(error){
+      if(!portalHasRole('staff')){workspace.pending.delete(id);workspace.errors.delete(id);return false;}
       // Keep unsaved edits in this tab, without persisting a device copy or
       // overwriting a newer shared revision. The operator can reload/review.
       const newer=workspace.pending.get(id);
@@ -76,7 +77,7 @@ async function workspaceFlush(id){
 async function workspaceReload(){
   if(workspace.drag)return;
   try{
-    const response=await fetch(`${SUPABASE_URL}/rest/v1/inventory_workspace_drafts?select=*${workspace.showArchived?'':'&state=neq.archived'}&order=created_at.asc`,{headers:{apikey:SUPABASE_KEY},cache:'no-store'});
+    const response=await portalFetch(`${SUPABASE_URL}/rest/v1/inventory_workspace_drafts?select=*${workspace.showArchived?'':'&state=neq.archived'}&order=created_at.asc`,{headers:{apikey:SUPABASE_KEY},cache:'no-store'});
     if(!response.ok)throw new Error('Shared creation space is unavailable. The workspace update may not be installed yet.');
     const rows=await response.json();if(!Array.isArray(rows))throw new Error('Invalid shared draft response.');
     for(const row of rows){
@@ -354,7 +355,7 @@ async function workspaceEnsurePhoto(path){
   if(workspace.photoRequests.has(path))return workspace.photoRequests.get(path);
   const task=(async()=>{
     try{
-      const response=await fetch(`${SUPABASE_URL}/storage/v1/object/sign/otr-inventory-workspace/${path.split('/').map(encodeURIComponent).join('/')}`,{method:'POST',headers:workspaceStorageHeaders(),body:JSON.stringify({expiresIn:3600})});
+      const response=await portalFetch(`${SUPABASE_URL}/storage/v1/object/sign/otr-inventory-workspace/${path.split('/').map(encodeURIComponent).join('/')}`,{method:'POST',headers:workspaceStorageHeaders(),body:JSON.stringify({expiresIn:3600})});
       const result=await response.json();if(!response.ok)throw new Error('Photo unavailable');
       const signed=result.signedURL||result.signedUrl;
       const url=signed?.startsWith('/object/')?`${SUPABASE_URL}/storage/v1${signed}`:new URL(signed,SUPABASE_URL).href;
@@ -395,7 +396,7 @@ async function workspaceUploadPhotos(files,id){
     const extension={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/heic':'heic','image/heif':'heif'}[file.type];
     const path=`${id}/${inventoryOperationId()}.${extension}`;workspace.uploadError='';workspace.uploading++;workspaceStatus();
     try{
-      const response=await fetch(`${SUPABASE_URL}/storage/v1/object/otr-inventory-workspace/${path}`,{method:'POST',headers:{...workspaceStorageHeaders(file.type),'x-upsert':'false','cache-control':'no-store'},body:file});
+      const response=await portalFetch(`${SUPABASE_URL}/storage/v1/object/otr-inventory-workspace/${path}`,{method:'POST',headers:{...workspaceStorageHeaders(file.type),'x-upsert':'false','cache-control':'no-store'},body:file});
       if(!response.ok)throw new Error('Photo upload did not complete. Retry attaching the photo.');
       const paths=workspaceView(id).data.photo_paths||[];
       workspaceQueue(id,{data:{photo_paths:[...paths,path]}},actor);

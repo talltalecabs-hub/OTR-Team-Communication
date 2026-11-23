@@ -119,7 +119,7 @@ function inventoryItemLocationLabel(item){
 }
 async function loadInventoryCarts(){
   try{
-    const response=await fetch(`${SUPABASE_URL}/rest/v1/inventory_carts?select=*&order=cart_code.asc`,{headers:{"apikey":SUPABASE_KEY}});
+    const response=await portalFetch(`${SUPABASE_URL}/rest/v1/inventory_carts?select=*&order=cart_code.asc`,{headers:{"apikey":SUPABASE_KEY}});
     if(!response.ok) throw new Error(`Cart registry ${response.status}`);
     const rows=await response.json();
     if(!Array.isArray(rows)) throw new Error("Invalid cart registry");
@@ -192,7 +192,7 @@ async function saveBinCartLocation(){
   if(!["","A","B"].includes(cart)) return;
   binCartSavePending=true;
   try{
-    const response=await fetch(`${SUPABASE_URL}/rest/v1/inventory_bins?id=eq.${encodeURIComponent(bin.id)}`,{
+    const response=await portalFetch(`${SUPABASE_URL}/rest/v1/inventory_bins?id=eq.${encodeURIComponent(bin.id)}`,{
       method:"PATCH",
       headers:{...inventoryEventHeaders(initials),"Prefer":"return=representation"},
       body:JSON.stringify({cart_location:cart||null})
@@ -404,7 +404,7 @@ async function loadInventoryBins(){
   const status=document.getElementById("binBackendStatus");
   if(status) status.textContent="Loading bin registry…";
   try{
-    const response=await fetch(`${SUPABASE_URL}/rest/v1/inventory_bins?select=*&order=bin_code.asc`,{
+    const response=await portalFetch(`${SUPABASE_URL}/rest/v1/inventory_bins?select=*&order=bin_code.asc`,{
       headers:{"apikey":SUPABASE_KEY}
     });
     if(!response.ok){
@@ -453,7 +453,7 @@ async function openCreateBin(){
 }
 
 async function insertInventoryBin(payload,initials,retry=true,allowRenumber=true){
-  const response=await fetch(`${SUPABASE_URL}/rest/v1/inventory_bins`,{
+  const response=await portalFetch(`${SUPABASE_URL}/rest/v1/inventory_bins`,{
     method:"POST",
     headers:{...inventoryEventHeaders(initials),"Prefer":"return=representation"},
     body:JSON.stringify(payload)
@@ -622,7 +622,8 @@ async function openBinDetail(key,historyMode="push"){
       </div>
       ${parent?`<p>Parent bin: <button class="secondary" type="button" onclick="openBinDetail('${escapeHtml(parent.bin_code)}')">${escapeHtml(parent.bin_code)}</button></p>`:""}
       ${bin.description?`<p><strong>Notes:</strong> ${escapeHtml(bin.description)}</p>`:""}
-      <details id="binManagementControls"><summary>Bin Management</summary>
+      <button class="secondary" type="button" onclick="openBinManagement('${escapeHtml(bin.id)}')">Manage Bin</button>
+      <details id="binManagementControls" class="requires-staff"><summary>Bin Management</summary>
       <label for="binDisplayName">Bin Name</label><input id="binDisplayName" maxlength="120" value="${escapeHtml(inventoryBinDisplayName(bin))}" />
       <button id="binNameSave" class="secondary" type="button" onclick="saveInventoryBinName()">Save Bin Name</button><p id="binNameStatus" class="small" role="status"></p>
       <label for="binCartLocationSelect">Assign this ${escapeHtml(bin.model)} bin to a cart</label>
@@ -793,7 +794,7 @@ async function assignSelectedPartToBin(){
   binAssignmentPending=true;
   let confirmed=false;
   try{
-    const response=await fetch(`${SUPABASE_URL}/rest/v1/rpc/move_inventory_part`,{
+    const response=await portalFetch(`${SUPABASE_URL}/rest/v1/rpc/move_inventory_part`,{
       method:"POST",
       headers:inventoryEventHeaders(initials),
       body:JSON.stringify({

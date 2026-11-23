@@ -1,3 +1,5 @@
+registerPortalAuthGuards();
+initializePortalAuth();
 initializePortalHistory();
 renderCategories();
 loadVehicleRegistry();

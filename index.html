@@ -2,72 +2,29 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#111111" />
-  <title>OTR Team Portal — V1.3.4</title>
-  <link rel="stylesheet" href="assets/styles.css?v=1.3.4" />
+  <title>Team Portal — V2.0.0</title>
+  <link rel="stylesheet" href="assets/styles.css?v=2.0.0" />
+  <link rel="stylesheet" href="assets/v2.css?v=2.0.0" />
 </head>
-<body>
+<body data-portal-role="public" data-screen="home">
 <div class="app">
-  <div class="topbar">
-    <div class="brand">
-      <h1>OTR Team Portal</h1>
-      <p>Building winning systems with winning people.</p>
-    </div>
-    <div style="display:flex;align-items:center;gap:10px">
-      <button id="globalHomeButton" type="button" class="secondary hidden" onclick="resetAndHome()" style="min-height:44px;padding:9px 14px;font-size:15px">⌂ Home</button>
-      <div class="pill">Team Beta V1.3.4 • Shared database + offline queue</div>
-    </div>
-  </div>
-
+  <header class="topbar">
+    <div class="brand"><img class="otr-brand-mark" src="assets/brand/otr-mark.svg" alt="OTR" width="250" height="71" /><h1>Team Portal</h1><p>Building winning systems with winning people.</p></div>
+    <div class="portal-header-actions"><button id="globalHomeButton" type="button" class="secondary hidden" onclick="resetAndHome()">⌂ Home</button><button id="portalSignIn" type="button" class="portal-sign-in" onclick="requestPortalSignIn()">Sign In</button><div id="portalAccount" class="portal-account hidden"><span id="portalAccountLabel"></span><span id="portalAccountEmail" class="sr-only"></span><button type="button" onclick="signOutPortal()">Sign Out</button></div></div>
+  </header>
   <section id="home" class="screen active">
-    <div class="hero home-intro">
-      <div class="eyebrow">TEAM COMMUNICATIONS</div>
-      <h2>What would you like to do?</h2>
-      <p>Find inventory, record event notes, or share team feedback.</p>
-    </div>
-    <div class="grid">
-      <button id="homeInventoryButton" class="bigbtn live-feature accent" type="button" onclick="openInventoryAssistant()" style="grid-column:1/-1">
-        <strong>Inventory</strong>
-        <span>Find parts, open chassis bins, and manage Mobile or Backstock inventory.</span>
-      </button>
-      <button class="bigbtn live-feature" onclick="showScreen('categories')">
-        <strong>Feedback</strong>
-        <span>Quick, optionally anonymous feedback about any team system.</span>
-      </button>
-      <button class="bigbtn live-feature" onclick="showScreen('postevent')">
-        <strong>Post-Event Report</strong>
-        <span>Structured event notes, facts, usage, needs, and follow-up.</span>
-      </button>
-      <button class="bigbtn live-feature" onclick="showScreen('problem')">
-        <strong>Report a Problem</strong>
-        <span>Something broken, missing, unsafe, confusing, delayed, or blocked.</span>
-      </button>
-      <button class="bigbtn live-feature" onclick="showScreen('idea')">
-        <strong>Ideas / Improvements</strong>
-        <span>A better way, useful experiment, or something worth trying.</span>
-      </button>
-    </div>
-
-    <div style="margin-top:22px">
-      <button class="bigbtn live-feature" onclick="showScreen('driversLounge')" style="border:2px solid var(--accent-dark);background:linear-gradient(135deg, rgba(183,255,34,.12), rgba(255,255,255,0) 55%), var(--panel)">
-        <strong>Driver’s Lounge</strong>
-        <span>Pre-stint check-in, post-stint debrief, and driver-specific feedback.</span>
-      </button>
-    </div>
-
-    <div style="margin-top:14px">
-      <button class="bigbtn live-feature" onclick="showScreen('shopTalk')" style="border:2px solid var(--accent-dark);background:linear-gradient(135deg, rgba(183,255,34,.12), rgba(255,255,255,0) 55%), var(--panel)">
-        <strong>Shop Talk</strong>
-        <span>Hands-on crew operations, technical reporting, spares, incidents, and shop-to-track communication.</span>
-      </button>
-    </div>
-
-    <div style="margin-top:34px;padding-top:18px;border-top:1px solid var(--border);text-align:center">
-      <button type="button" class="secondary admin-stealth" onclick="openAdminAssistant()" style="min-width:220px">Administrative</button>
-    </div>
+    <div class="hero home-intro"><h2>What would you like to do?</h2><p>Find inventory, record event notes, or share team feedback.</p></div>
+    <div class="home-stack">
+<button id="homeDriversButton" class="bigbtn home-action home-wide home-lounge" type="button" onclick="showScreen('driversLounge')"><svg class="home-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 15a8 8 0 0 1 16 0v4H4v-4Z"/><path d="m5 13 9 1 5-3M4 19h16M12 14v5"/></svg><div class="home-copy"><strong>Visit Driver’s Lounge</strong><span>Pre-stint check-in, post-stint debrief, and driver-specific feedback.</span></div></button><button id="homeInventoryButton" class="bigbtn home-action home-wide" type="button" onclick="openInventoryAssistant()"><svg class="home-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 7 9-5 9 5v10l-9 5-9-5V7Z"/><path d="m3 7 9 5 9-5M12 12v10M7 4l10 6"/></svg><div class="home-copy"><strong>Inventory</strong><span>Find parts, open chassis bins, and use inventory.</span></div></button><div class="home-pair"><button id="homeFeedbackButton" class="bigbtn home-action " type="button" onclick="showScreen('categories')"><svg class="home-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11c0 5-4 8-9 8H8l-5 3 1-6a7 7 0 0 1-1-5c0-5 4-8 9-8s9 3 9 8Z"/><path d="M7 11h.1M12 11h.1M17 11h.1"/></svg><div class="home-copy"><strong>Feedback</strong><span>Quick, optionally anonymous feedback about any team system.</span></div></button><button id="homeQuestionnaireButton" class="bigbtn home-action " type="button" onclick="showScreen('postevent')"><svg class="home-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="18" rx="2"/><path d="M9 4V2h6v2M9 10h6M9 15h6M9 19h4"/></svg><div class="home-copy"><strong>Post-Event Crew Questionnaire</strong><span>Structured event notes, facts, usage, needs, and follow-up.</span></div></button></div><div class="home-pair"><button id="homeProblemButton" class="bigbtn home-action " type="button" onclick="showScreen('problem')"><svg class="home-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v5m0 3v.2"/></svg><div class="home-copy"><strong>Report a Problem</strong><span>Something broken, missing, unsafe, confusing, delayed, or blocked.</span></div></button><button id="homeIdeaButton" class="bigbtn home-action " type="button" onclick="showScreen('idea')"><svg class="home-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 15a6 6 0 1 1 8 0l-1 4H9l-1-4Zm1 7h6M12 1V0M3 6 1 5m20 1 2-1M3 15l-2 1m20-1 2 1"/></svg><div class="home-copy"><strong>Leave an Idea</strong><span>A better way, useful experiment, or something worth trying.</span></div></button></div><button id="homeShopButton" class="bigbtn home-action home-wide home-shop" type="button" onclick="showScreen('shopTalk')"><svg class="home-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 4 3 3 4-3a6 6 0 0 1-7 8L5 21l-3-3 9-9a6 6 0 0 1 3-7v2Z"/><path d="m3 3 4 1 2 3-2 2-3-2-1-4Zm10 12 6 6 3-3-6-6"/></svg><div class="home-copy"><strong>Work in the Shop</strong><span>Hands-on crew operations, technical reporting, spares, incidents, and shop-to-track communication.</span></div></button></div><div class="home-administrative"><span></span><button type="button" onclick="openAdminAssistant()">Administrative <span aria-hidden="true">›</span></button><span></span></div><p class="portal-version">Team Portal · V2.0.0</p>
   </section>
-
+  <section id="signIn" class="screen">
+    <button class="secondary back" type="button" onclick="cancelPortalSignIn()">← Back</button>
+    <div class="auth-layout"><div class="auth-panel card"><div class="auth-mark" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V6a4 4 0 0 1 8 0v4M12 14v3"/></svg></div><h2 id="signInTitle" class="sectiontitle">Team Sign In</h2><p id="signInReason" class="subtitle">Sign in for team management tools. Public portal features stay open.</p>
+    <form id="portalSignInForm" onsubmit="submitPortalSignIn(event)"><label for="signInEmail">Email</label><input id="signInEmail" type="email" autocomplete="username" inputmode="email" required /><label for="signInPassword">Password</label><input id="signInPassword" type="password" autocomplete="current-password" required /><p id="signInStatus" class="auth-status" role="status" aria-live="polite"></p><button id="signInSubmit" class="primary" type="submit">Sign In</button></form><button class="auth-text-button" type="button" onclick="refreshPortalAccount()">Refresh account access</button>
+    <details id="adminAccessRequest" class="auth-access-request"><summary>Request Admin Access</summary><p>Tell the team why you need administrative access. A request does not grant access automatically.</p><form id="adminAccessForm" onsubmit="submitAdminAccessRequest(event)"><label for="adminAccessName">Your name</label><input id="adminAccessName" autocomplete="name" maxlength="120" required /><label for="adminAccessEmail">Your email</label><input id="adminAccessEmail" type="email" inputmode="email" autocomplete="email" maxlength="254" required /><label for="adminAccessReason">What do you need access for?</label><textarea id="adminAccessReason" maxlength="2000" rows="4" required></textarea><p id="adminAccessStatus" role="status" aria-live="polite"></p><button id="adminAccessSubmit" class="secondary" type="submit">Submit Access Request</button></form></details></div></div>
+  </section>
   <section id="categories" class="screen">
     <button class="secondary back" onclick="resetAndHome()">← Home</button>
     <h2 class="sectiontitle">What area do you want to talk about?</h2>
@@ -140,7 +97,7 @@
 
   <section id="shopTalk" class="screen">
     <button class="secondary back" onclick="resetAndHome()">← Home</button>
-    <h2 class="sectiontitle">Shop Talk</h2>
+    <h2 class="sectiontitle">Work in the Shop</h2>
     <div class="hero" style="background:var(--panel);border-left:8px solid var(--accent);padding:22px">
       <h2 style="font-size:30px">Hands-on operations, from the shop to the track.</h2>
       <p>A crew-facing workspace for technical communication, reporting, resources, and the things that keep the cars moving.</p>
@@ -654,7 +611,7 @@
 
     <div class="hero" style="background:linear-gradient(135deg,rgba(183,255,34,.12),transparent 58%),var(--panel);border-left:8px solid var(--accent);padding:22px">
       <div class="eyebrow">POST-EVENT DEBRIEF</div>
-      <h2 style="font-size:32px;margin:8px 0 7px">Post-Event Report</h2>
+      <h2 style="font-size:32px;margin:8px 0 7px">Post-Event Crew Questionnaire</h2>
       <p>Help turn what we learned at this event into better preparation for the next one. Focus on what worked, what created friction, and what the team should act on.</p>
     </div>
 
@@ -769,7 +726,7 @@
       </div>
 
       <div class="actions">
-        <button id="postEventSubmitBtn" type="button" class="primary" onclick="submitPostEvent()">Submit Post-Event Report</button>
+        <button id="postEventSubmitBtn" type="button" class="primary" onclick="submitPostEvent()">Submit Post-Event Crew Questionnaire</button>
       </div>
     </div>
   </section>
@@ -786,7 +743,7 @@
 
   <section id="idea" class="screen">
     <button class="secondary back" type="button" onclick="resetAndHome()">← Home</button>
-    <h2 class="sectiontitle">Ideas / Improvements</h2>
+    <h2 class="sectiontitle">Leave an Idea</h2>
 
     <div class="card">
       <label for="ideaText">What should we try?</label>
@@ -804,7 +761,7 @@
 
 
   <section id="wishlist" class="screen wishlist-screen">
-    <button class="secondary back" onclick="portalBack('idea')">← Ideas / Improvements</button>
+    <button class="secondary back" onclick="portalBack('idea')">← Leave an Idea</button>
     <div class="hero">
       <div class="eyebrow">TOTALLY SERIOUS BUSINESS</div>
       <h2 style="font-size:34px;margin:8px 0 8px">Team Wishlist ✨</h2>
@@ -840,7 +797,6 @@
       <div class="eyebrow">ADMIN ASSISTANT</div>
       <h2 style="font-size:32px;margin:8px 0 7px">Administrative tools</h2>
       <p>Review team submissions and manage the shared vehicle registry.</p>
-      <div class="admin-lock-note"><strong>Beta note:</strong> Admin access is intentionally open for now. Authentication will be added before broader deployment.</div>
     </div>
 
     <div class="grid">
@@ -888,9 +844,10 @@
         <option value="ALL">All submissions</option>
         <option value="feedback">Feedback</option>
         <option value="Problem report">Problem reports</option>
-        <option value="Improvement idea">Ideas / Improvements</option>
+        <option value="Improvement idea">Leave an Idea</option>
         <option value="Team Wishlist">Team Wishlist</option>
-        <option value="post_event_report">Post-Event Reports</option>
+        <option value="admin_access_request">Admin Access Requests</option>
+        <option value="post_event_report">Post-Event Crew Questionnaires</option>
       </select>
       <button type="button" class="secondary" onclick="loadAdminSubmissions()">Refresh</button>
     </div>
@@ -911,17 +868,19 @@
   </section>
 </div>
 
-<script src="assets/config.js?v=1.3.4"></script>
-<script src="assets/core.js?v=1.3.4"></script>
-<script src="assets/submissions.js?v=1.3.4"></script>
-<script src="assets/inventory.js?v=1.3.4.1"></script>
-<script src="assets/vendor/qrcode-generator-1.4.4.js?v=1.3.4"></script>
-<script src="assets/labels.js?v=1.3.4.1"></script>
-<script src="assets/crew.js?v=1.3.4"></script>
-<script src="assets/vehicles.js?v=1.3.4"></script>
-<script src="assets/intake.js?v=1.3.4"></script>
-<script src="assets/bin-management.js?v=1.3.4"></script>
-<script src="assets/workspace.js?v=1.3.4"></script>
-<script src="assets/bootstrap.js?v=1.3.4"></script>
+<script src="assets/config.js?v=2.0.0"></script>
+<script src="assets/core.js?v=2.0.0"></script>
+<script src="assets/submissions.js?v=2.0.0"></script>
+<script src="assets/inventory.js?v=2.0.0"></script>
+<script src="assets/vendor/qrcode-generator-1.4.4.js?v=2.0.0"></script>
+<script src="assets/labels.js?v=2.0.0"></script>
+<script src="assets/crew.js?v=2.0.0"></script>
+<script src="assets/vehicles.js?v=2.0.0"></script>
+<script src="assets/intake.js?v=2.0.0"></script>
+<script src="assets/bin-management.js?v=2.0.0"></script>
+<script src="assets/workspace.js?v=2.0.0"></script>
+<script src="assets/vendor/supabase-js-2.119.2.js?v=2.0.0"></script>
+<script src="assets/auth.js?v=2.0.0"></script>
+<script src="assets/bootstrap.js?v=2.0.0"></script>
 </body>
 </html>

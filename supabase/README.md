@@ -1,5 +1,7 @@
 # Supabase inventory files
 
+For V2 Auth, follow [the coordinated rollout](../docs/v2-auth-rollout.md). Apply the V2 migration to the existing project after verifying the owner Admin account. The files below document historical/fresh-environment setup; do not replay beta policies or seeds over secured production.
+
 Apply `schema.sql` and `submissions_schema.sql` before `seed_inventory.sql` on a new database.
 
 `seed_inventory.sql` contains 297 unique inventory codes and uses `ON CONFLICT DO NOTHING`, so rerunning it will not overwrite quantities, verification state, locations, or other crew corrections.

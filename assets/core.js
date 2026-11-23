@@ -128,7 +128,7 @@ const operationalFormDefinitions = {
   },
   technicalReport: {
     parent: "shopTalk",
-    eyebrow: "SHOP TALK",
+    eyebrow: "WORK IN THE SHOP",
     title: "Technical / Car Report",
     subtitle: "Record a finding, setup concern, repair, failure, or post-session technical note.",
     type: "technical_car_report",
@@ -149,7 +149,7 @@ const operationalFormDefinitions = {
   },
   incidentReport: {
     parent: "shopTalk",
-    eyebrow: "SHOP TALK",
+    eyebrow: "WORK IN THE SHOP",
     title: "Incident / Damage Report",
     subtitle: "Document contact, damage, failures, or anything that needs immediate follow-up.",
     type: "incident_damage_report",
@@ -171,7 +171,7 @@ const operationalFormDefinitions = {
   },
   crewOperations: {
     parent: "shopTalk",
-    eyebrow: "SHOP TALK",
+    eyebrow: "WORK IN THE SHOP",
     title: "Crew Operations",
     subtitle: "Capture the shop, paddock, pit, tool, loading, logistics, and workflow issues that keep the team moving.",
     type: "crew_operations",
@@ -198,6 +198,8 @@ let portalNoticeTimer = null;
 let activeOperationalFormKey = "";
 
 function renderPortalScreen(id){
+  if(typeof portalGuardScreen==="function"&&!portalGuardScreen(id,"replace"))return false;
+  document.body.dataset.screen=id;
   const target=document.getElementById(id);
   if(!target){
     console.error(`Unknown portal screen: ${id}`);
@@ -237,6 +239,8 @@ function showPortalNavNotice(message){
 }
 
 function showScreen(id,{historyMode="push"}={}){
+  if(typeof portalGuardScreen==="function"&&!portalGuardScreen(id,historyMode))return;
+  if(typeof portalAuth!=="undefined"&&portalAuth.resuming)historyMode="replace";
   if(!renderPortalScreen(id)) return;
   if(!portalHistoryReady || historyMode==="none") return;
 
@@ -413,7 +417,7 @@ function refreshOperationalVehicleOptions(){
 
 async function loadVehicleRegistry(){
   try{
-    const response=await fetch(
+    const response=await portalFetch(
       `${SUPABASE_URL}/rest/v1/vehicles?select=*&order=platform,display_order,vehicle_name`,
       {headers:{"apikey":SUPABASE_KEY}}
     );
