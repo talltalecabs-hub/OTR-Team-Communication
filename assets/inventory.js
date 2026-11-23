@@ -194,7 +194,7 @@ function inventoryMatchesSearch(item,query){
   const hay=[item.item_name,item.platform,item.location,item.category,item.condition,item.status,
     item.part_number,item.assigned_vehicle,item.use_case,item.tag_id,item.inventory_code,...(inventoryTagAliases.get(item.id)||[]),
     inventoryStockCategoryLabel(item),inventoryItemLocationLabel(item),inventoryItemBinDisplayLabel(item),
-    bin?.description,bin?.system,...(Array.isArray(item.compatibility)?item.compatibility:[])]
+    bin?.name,bin?.description,bin?.system,...(Array.isArray(item.compatibility)?item.compatibility:[])]
     .filter(Boolean).join(" ").toLowerCase();
   return String(query||"").trim().toLowerCase().split(/\s+/).filter(Boolean).every(term=>hay.includes(term));
 }
