@@ -87,6 +87,7 @@ function registerPortalAuthGuards(){
 function renderPortalAuth(){
   document.body.dataset.portalRole=portalAuth.role;
   const signed=Boolean(portalAuth.session);
+  document.body.dataset.portalSignedIn=String(signed);
   document.getElementById('portalSignIn').classList.toggle('hidden',signed);
   document.getElementById('portalAccount').classList.toggle('hidden',!signed);
   document.getElementById('portalAccountLabel').textContent=portalRoleLabel();
