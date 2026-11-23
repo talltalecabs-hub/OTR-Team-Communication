@@ -6,6 +6,9 @@ Chromium; CHROMIUM_PATH overrides /usr/bin/chromium. OTR_TEST_OUTPUT retains
 screenshots. Real PostgreSQL atomicity/RLS tests live in test_inventory_crew.mjs.
 """
 import copy
+import base64
+import time
+import uuid
 import functools
 import json
 import os
@@ -101,6 +104,14 @@ class FixtureError(Exception):
 
 class Backend:
     def __init__(self):
+        self.auth_tokens={}
+        self.auth_refresh={}
+        self.auth_roles={'staff':'staff','admin':'admin','unassigned':'public'}
+        self.auth_passwords={who:'fixture-only-password' for who in self.auth_roles}
+        self.auth_password_required=set()
+        self.fail_next_password_change=False
+        self.auth_calls=[]
+        self.denied_requests=[]
         self.intake_requests = {}
         self.drafts = {}
         self.photos = {}
@@ -292,6 +303,70 @@ class Backend:
         self.vehicle_events.append(dict(actor_initials=actor, from_state=before, to_state=copy.deepcopy(vehicle)))
         return vehicle
 
+    def auth_user(self,who):
+        return dict(id=uid({'staff':9001,'admin':9002,'unassigned':9003}[who]),email=who+'@otr.test',aud='authenticated',role='authenticated',app_metadata={'provider':'email','providers':['email'],'otr_portal_role':self.auth_roles[who]},user_metadata={},identities=[],created_at='2026-11-23T00:00:00Z',email_confirmed_at='2026-11-23T00:00:00Z')
+
+    def auth_session(self,who):
+        encode=lambda value:base64.urlsafe_b64encode(json.dumps(value).encode()).decode().rstrip('=')
+        token=encode({'alg':'HS256','typ':'JWT'})+'.'+encode({'sub':self.auth_user(who)['id'],'role':'authenticated','aud':'authenticated','iat':int(time.time()),'exp':int(time.time())+3600,'session_id':str(uuid.uuid4())})+'.'+base64.urlsafe_b64encode(bytes(32)).decode().rstrip('=')
+        refresh=str(uuid.uuid4());self.auth_tokens[token]=who;self.auth_refresh[refresh]=who
+        return dict(access_token=token,refresh_token=refresh,token_type='bearer',expires_in=3600,expires_at=int(time.time())+3600,user=self.auth_user(who))
+
+    def auth_route(self,route):
+        request=route.request;parsed=urlsplit(request.url)
+        self.auth_calls.append(dict(method=request.method,path=parsed.path))
+        def reply(data,status=200):route.fulfill(status=status,content_type='application/json',body=json.dumps(data),headers={'access-control-allow-origin':'*','access-control-expose-headers':'X-Supabase-Api-Version','x-supabase-api-version':'2024-01-01'})
+        if request.method=='OPTIONS':
+            route.fulfill(status=204,headers={'access-control-allow-origin':'*','access-control-allow-headers':'*','access-control-allow-methods':'GET,POST,PUT'});return
+        token=request.headers.get('authorization','').removeprefix('Bearer ')
+        if parsed.path.endswith('/token'):
+            data=request.post_data_json or {};grant=parse_qs(parsed.query).get('grant_type',[''])[0]
+            if grant=='password':
+                who=data.get('email','').split('@')[0]
+                if data.get('email')!=who+'@otr.test' or who not in self.auth_roles or data.get('password')!=self.auth_passwords[who]:return reply({'error':'invalid_grant','msg':'Invalid login credentials'},400)
+            else:
+                who=self.auth_refresh.get(data.get('refresh_token'))
+                if not who:return reply({'error':'invalid_grant','msg':'Refresh token not found'},400)
+            return reply(self.auth_session(who))
+        if parsed.path.endswith('/user'):
+            who=self.auth_tokens.get(token)
+            if not who:return reply({'error':'bad_jwt','msg':'Invalid JWT'},401)
+            if request.method=='PUT':
+                data=request.post_data_json or {}
+                if data.get('current_password')!=self.auth_passwords[who]:return reply({'code':'invalid_credentials','msg':'Incorrect current password'},400)
+                if self.fail_next_password_change:
+                    self.fail_next_password_change=False
+                    return reply({'code':'weak_password','msg':'Password rejected'},422)
+                if len(data.get('password',''))<12:return reply({'code':'weak_password','msg':'Password too short'},422)
+                if data['password']==self.auth_passwords[who]:return reply({'code':'same_password','msg':'Password must differ'},422)
+                self.auth_passwords[who]=data['password'];self.auth_password_required.discard(who)
+            return reply(self.auth_user(who))
+        if parsed.path.endswith('/logout'):
+            self.auth_tokens.pop(token,None);route.fulfill(status=204,headers={'access-control-allow-origin':'*'});return
+        self.errors.append('Unexpected Auth route '+parsed.path);reply({'message':'Unexpected Auth route'},500)
+
+    def api_role(self,request):
+        token=request.headers.get('authorization','').removeprefix('Bearer ')
+        who=self.auth_tokens.get(token)
+        return ('public' if who in self.auth_password_required else self.auth_roles.get(who,'public')),who
+
+    def authorize_api(self,route):
+        request=route.request;parsed=urlsplit(request.url)
+        if request.method=='OPTIONS':return True
+        role,who=self.api_role(request)
+        if '/storage/v1/' in parsed.path and request.method=='GET' and parse_qs(parsed.query).get('token')==['fixture']:return True
+        path=parsed.path.split('/rest/v1/',1)[-1]
+        if path=='rpc/portal_access':
+            route.fulfill(status=200,content_type='application/json',body=json.dumps({'role':role,'user_id':self.auth_user(who)['id'] if who else None,'password_change_required':who in self.auth_password_required}));return False
+        if path=='rpc/inventory_tag_links':
+            route.fulfill(status=200,content_type='application/json',body=json.dumps([{'tag_id':c['tag_id'],'inventory_item_id':c['inventory_item_id']} for c in self.drafts.values() if c.get('inventory_item_id')]));return False
+        public=path=='rpc/use_inventory_part' or path=='submissions' and request.method=='POST' or request.method=='GET' and path in ['inventory_items','inventory_bins','inventory_carts','vehicles']
+        if public:return True
+        required='admin' if path in ['submissions','vehicles','vehicle_registry_events','rpc/save_vehicle_registry'] else 'staff'
+        if role=='admin' or required=='staff' and role=='staff':return True
+        self.denied_requests.append(dict(path=path,method=request.method,role=role))
+        route.fulfill(status=403,content_type='application/json',body=json.dumps({'message':'Access denied','code':'42501'}));return False
+
     def intake_route(self,route):
         request=route.request
         if request.method=='OPTIONS':
@@ -398,6 +473,8 @@ class Backend:
 
     def route(self, route):
         request = route.request
+        if '/auth/v1/' in request.url:return self.auth_route(route)
+        if not self.authorize_api(route):return
         if any('/rpc/'+name in request.url for name in ['create_inventory_stock','reconcile_inventory_stock','retire_inventory_bin','rename_inventory_bin','rename_inventory_part']):
             return self.intake_route(route)
         if '/inventory_workspace_drafts' in request.url or '_inventory_workspace_draft' in request.url or '/storage/v1/' in request.url:
@@ -565,9 +642,142 @@ def open_use(page, code):
     assert page.input_value("#usePartInitials") == ""
 
 
+def sign_in(page,who):
+    if not page.locator('#signIn.active').count():page.evaluate('requestPortalSignIn()')
+    page.wait_for_function('portalAuth.client!==null')
+    page.fill('#signInEmail',who+'@otr.test');page.fill('#signInPassword','fixture-only-password')
+    page.locator('#signInSubmit').click()
+    page.wait_for_function('(email)=>portalAuth.ready && !portalAuth.busy && portalAuth.session?.user.email===email',arg=who+'@otr.test')
+    assert page.input_value('#signInPassword')==''
+
+
+def v2_auth_checks(page,backend):
+    page.goto(base_url);page.wait_for_function('vehicleRegistryReady && portalAuth.ready')
+    expected=['Visit Driver’s Lounge','Inventory','Feedback','Post-Event Crew Questionnaire','Report a Problem','Leave an Idea','Work in the Shop']
+    assert page.locator('#home .home-stack strong').all_text_contents()==expected
+    assert page.locator('.brand h1').inner_text()=='Team Portal'
+    assert 'TEAM COMMUNICATIONS' not in page.inner_text('#home')
+    assert page.locator('.otr-brand-mark').is_visible()
+    assert page.locator('.brand p').inner_text()=='Building winning systems with winning people.'
+    for width,height,label in [(390,844,'iphone'),(800,1280,'fire-portrait'),(1280,800,'fire-landscape')]:
+        page.set_viewport_size({'width':width,'height':height})
+        assert page.evaluate('document.documentElement.scrollWidth<=window.innerWidth'),label
+        boxes=[page.locator('#'+id).bounding_box() for id in ['homeDriversButton','homeInventoryButton','homeFeedbackButton','homeQuestionnaireButton','homeProblemButton','homeIdeaButton','homeShopButton']]
+        assert boxes[0]['y']<boxes[1]['y']<boxes[2]['y']==boxes[3]['y']<boxes[4]['y']==boxes[5]['y']<boxes[6]['y']
+        assert all(b['width']>=44 and b['height']>=44 for b in boxes)
+        page.screenshot(path=str(OUTPUT/('v2-home-'+label+'.png')),full_page=True)
+    page.set_viewport_size({'width':1280,'height':1000})
+    for screen in ['driversLounge','categories','postevent','problem','idea','shopTalk']:
+        page.evaluate('(screen)=>showScreen(screen)',screen)
+        assert page.locator('#'+screen+'.active').count()==1
+        assert not page.locator('#signIn.active').count()
+    page.evaluate('openInventoryAssistant()')
+    page.locator('#inventoryHome .bigbtn').nth(1).click();page.wait_for_selector('#signIn.active')
+    before=copy.deepcopy(backend.items);attempts=len(backend.attempts)
+    for name in page.evaluate('Object.values(portalProtectedMutations).flat()'):
+        page.evaluate('(name)=>window[name]()',name)
+    assert len(backend.attempts)==attempts and backend.items==before
+    for width,height,label in [(390,844,'iphone'),(800,1280,'fire')]:
+        page.set_viewport_size({'width':width,'height':height})
+        page.evaluate("document.getElementById('adminAccessRequest').open=true")
+        assert page.evaluate('document.documentElement.scrollWidth<=window.innerWidth')
+        assert page.locator('#signInSubmit').bounding_box()['height']>=44
+        assert page.locator('#adminAccessSubmit').bounding_box()['height']>=44
+        page.screenshot(path=str(OUTPUT/('v2-signin-'+label+'.png')),full_page=True)
+    page.evaluate("document.getElementById('adminAccessRequest').open=false")
+    page.set_viewport_size({'width':1280,'height':1000})
+    # Bypass every UI guard; the API fixture independently denies the write.
+    status=page.evaluate("async()=>{const r=await fetch(SUPABASE_URL+'/rest/v1/inventory_items?id=eq.'+inventoryData[0]?.id,{method:'PATCH',headers:{apikey:SUPABASE_KEY,'Content-Type':'application/json','x-otr-initials':'QA'},body:JSON.stringify({quantity:999})});return r.status}")
+    assert status==403 and backend.items==before
+    page.fill('#signInEmail','staff@otr.test');page.fill('#signInPassword','wrong-password')
+    page.locator('#signInSubmit').click();page.wait_for_function("document.getElementById('signInStatus').textContent.includes('not recognized')")
+    assert page.evaluate('portalAuth.role')=='public'
+    # Access requests use the public submission path and never grant a role.
+    page.locator('#adminAccessRequest summary').click()
+    page.fill('#adminAccessName','Future administrator');page.fill('#adminAccessEmail','future@otr.test');page.fill('#adminAccessReason','Help review crew reports')
+    page.locator('#adminAccessSubmit').click();page.wait_for_function("document.getElementById('adminAccessStatus').textContent.includes('Request sent')")
+    assert backend.submissions[-1]['submission_type']=='admin_access_request'
+    assert backend.submissions[-1]['answers']['requested_role']=='admin'
+    assert 'future' not in backend.auth_roles
+    page.evaluate("portalAuth.pending={screen:'inventoryManagement',required:'staff'}")
+    sign_in(page,'unassigned')
+    assert page.evaluate('portalAuth.role')=='public' and page.locator('#signIn.active').count()==1
+    assert not page.locator('#inventoryManagement.active').count()
+    status=page.evaluate("async()=>{const r=await fetch(SUPABASE_URL+'/rest/v1/rpc/save_inventory_workspace_draft',{method:'POST',headers:portalBackendHeaders({'Content-Type':'application/json'}),body:'{}'});return r.status}")
+    assert status==403
+    backend.auth_roles['unassigned']='staff';page.evaluate('refreshPortalAccount()')
+    page.wait_for_selector('#inventoryManagement.active')
+    backend.auth_roles['unassigned']='public';page.evaluate('refreshPortalAccount()')
+    page.wait_for_selector('#signIn.active')
+    page.evaluate('signOutPortal()')
+    # Return to a specific protected form with its original part context.
+    page.evaluate("browseInventory('ALL','Mobile')");page.wait_for_function('inventoryBackendReady')
+    open_item(page,'E92-UNKNOWN');page.evaluate('openInventoryVerify()');page.wait_for_selector('#signIn.active')
+    sign_in(page,'staff');page.wait_for_selector('#inventoryEdit.active')
+    assert page.evaluate('currentInventoryItem.inventory_code')=='E92-UNKNOWN'
+    assert backend.items==before
+    # Session data survives this tab reload; no password/Auth session is placed in localStorage.
+    assert 'fixture-only-password' not in page.evaluate('JSON.stringify(sessionStorage)')
+    assert 'access_token' not in page.evaluate('JSON.stringify(localStorage)')
+    page.reload();page.wait_for_function("portalAuth.ready && portalAuth.role==='staff'")
+    page.evaluate('openAdminAssistant()');page.wait_for_selector('#signIn.active')
+    assert not page.locator('#adminAssistant.active').count()
+    sign_in(page,'admin');page.wait_for_selector('#adminAssistant.active')
+    assert page.locator('#portalAccountLabel').inner_text()=='Admin'
+    page.evaluate('signOutPortal()')
+    assert page.evaluate('portalAuth.role')=='public'
+    assert page.evaluate("sessionStorage.getItem('otr_portal_auth_v2')") is None
+    # Old protected history entries cannot render after sign-out.
+    page.evaluate("renderPortalScreen('adminAssistant')");page.wait_for_selector('#signIn.active')
+    assert not page.locator('#adminAssistant.active').count()
+    # First-login setup survives refresh and cannot be bypassed with direct writes.
+    backend.auth_password_required.add('admin')
+    page.evaluate("openAdminAssistant()")
+    sign_in(page,'admin');page.wait_for_selector('#changePassword.active')
+    assert page.evaluate("portalAuth.passwordChangeRequired && !portalHasRole('admin')")
+    status=page.evaluate("async()=>{const r=await fetch(SUPABASE_URL+'/rest/v1/rpc/save_vehicle_registry',{method:'POST',headers:portalBackendHeaders({'Content-Type':'application/json'}),body:'{}'});return r.status}")
+    assert status==403 and backend.items==before
+    page.reload();page.wait_for_selector('#changePassword.active')
+    page.evaluate('openAdminAssistant()');page.wait_for_selector('#changePassword.active')
+    for width,height,label in [(390,844,'iphone'),(800,1280,'fire')]:
+        page.set_viewport_size({'width':width,'height':height})
+        assert page.evaluate('document.documentElement.scrollWidth<=window.innerWidth')
+        page.screenshot(path=str(OUTPUT/('v2-password-'+label+'.png')),full_page=True)
+    page.set_viewport_size({'width':1280,'height':1000})
+    page.fill('#passwordCurrent','fixture-only-password');page.fill('#passwordNew','new-fixture-only-password');page.fill('#passwordConfirm','mismatched-fixture-password')
+    calls=len(backend.auth_calls);page.locator('#passwordChangeSubmit').click()
+    assert 'do not match' in page.inner_text('#passwordChangeStatus') and len(backend.auth_calls)==calls
+    page.fill('#passwordConfirm','new-fixture-only-password');backend.fail_next_password_change=True
+    page.locator('#passwordChangeSubmit').click();page.wait_for_function("!portalAuth.busy && document.getElementById('passwordChangeStatus').textContent!=='Saving your password…'")
+    assert 'stronger' in page.inner_text('#passwordChangeStatus'),(page.inner_text('#passwordChangeStatus'),backend.auth_calls[-5:])
+    assert page.evaluate('portalAuth.passwordChangeRequired')
+    page.fill('#passwordCurrent','wrong-current-password');page.locator('#passwordChangeSubmit').click()
+    page.wait_for_function("!portalAuth.busy && document.getElementById('passwordChangeStatus').textContent.includes('not recognized')")
+    page.fill('#passwordCurrent','fixture-only-password');page.locator('#passwordChangeSubmit').click()
+    page.wait_for_selector('#adminAssistant.active')
+    page.wait_for_function("!portalAuth.busy && portalHasRole('admin')")
+    assert page.evaluate("['passwordCurrent','passwordNew','passwordConfirm'].every(id=>!document.getElementById(id).value)")
+    assert 'new-fixture-only-password' not in page.evaluate('JSON.stringify(sessionStorage)+JSON.stringify(localStorage)')
+    page.evaluate('signOutPortal()');page.evaluate('openAdminAssistant()')
+    page.fill('#signInEmail','admin@otr.test');page.fill('#signInPassword','fixture-only-password');page.locator('#signInSubmit').click()
+    page.wait_for_function("!portalAuth.busy && document.getElementById('signInStatus').textContent.includes('not recognized')")
+    page.fill('#signInPassword','new-fixture-only-password');page.locator('#signInSubmit').click();page.wait_for_selector('#adminAssistant.active')
+    assert not page.evaluate('portalAuth.passwordChangeRequired')
+    page.evaluate('signOutPortal()');backend.auth_passwords['admin']='fixture-only-password'
+    # An invalid stored identity must not poison the public request headers.
+    page.goto(base_url);page.wait_for_function('vehicleRegistryReady && portalAuth.ready')
+    session=backend.auth_session('staff');backend.auth_tokens.pop(session['access_token'])
+    page.evaluate("(session)=>sessionStorage.setItem('otr_portal_auth_v2',JSON.stringify(session))",session)
+    page.reload();page.wait_for_function('portalAuth.ready && portalAuth.session===null')
+    page.evaluate('openMobileInventory()');page.wait_for_function('inventoryBackendReady')
+    assert page.locator('#inventorySearch').is_visible()
+    assert_handlers(page)
+
+
 def run_checks(page, backend):
+    v2_auth_checks(page,backend)
     page.goto(base_url)
-    page.wait_for_function("vehicleRegistryReady")
+    page.wait_for_function("vehicleRegistryReady && portalAuth.ready")
     assert len(REGISTRY) == page.evaluate("vehicleRegistry.length") == 23
     assert_handlers(page)
 
@@ -580,9 +790,12 @@ def run_checks(page, backend):
     for hidden_action in ["Backstock", "Search All Inventory", "Add Inventory Item", "Label & Bin Assistant"]:
         assert not any(text.strip().startswith(hidden_action) for text in landing)
     page.locator("#inventoryHome .bigbtn").nth(1).click()
+    page.wait_for_selector("#signIn.active")
+    sign_in(page,"staff")
     page.wait_for_selector("#inventoryManagement.active")
     management_text = page.locator("#inventoryManagement").inner_text()
     assert all(label in management_text for label in ["Backstock", "Search All", "Add", "Bin", "Move"]), management_text
+    page.evaluate("signOutPortal()")
     page.evaluate("openInventoryAssistant()")
     page.locator("#crewMobileSearchButton").click()
     page.wait_for_selector("#inventoryBrowse.active")
@@ -676,6 +889,7 @@ def run_checks(page, backend):
     assert backend.events[-1]["quantity_before"] is None and backend.events[-1]["quantity_after"] is None
     for key in ["inventory_bin_id", "cart_code", "platform", "stock_category", "assignment_type", "source_metadata"]:
         assert backend.item("E92-UNKNOWN")[key] == unknown_before[key], key
+    sign_in(page,"staff")
     page.evaluate('openAssignPartToBin("","E92-UNKNOWN")')
     page.fill("#assignPartQty", "1")
     page.fill("#assignPartInitials", "un")
@@ -1107,6 +1321,7 @@ def run_checks(page, backend):
     assert backend.submissions[-1]["submission_type"] == "feedback_detailed"
     page.evaluate('document.getElementById("peEvent").value="Test event";document.getElementById("peRole").selectedIndex=1;document.getElementById("pe4").value="Worked well";submitPostEvent()')
     assert backend.submissions[-1]["submission_type"] == "post_event_report"
+    sign_in(page,"admin")
     page.evaluate("loadAdminSubmissions()")
     assert "Test event" in page.locator("#adminSubmissionsList").inner_text()
     backend.offline_submissions = True
@@ -1174,8 +1389,8 @@ def run_checks(page, backend):
 
     # Fresh document avoids rapid synthetic history resets contaminating the real click/back path.
     page.goto(base_url)
-    page.wait_for_function("vehicleRegistryReady")
-    assert page.locator("#home .grid button").first.get_attribute("id") == "homeInventoryButton"
+    page.wait_for_function("vehicleRegistryReady && portalAuth.ready")
+    assert page.locator("#home .home-stack button").first.get_attribute("id") == "homeDriversButton"
     page.locator("#homeInventoryButton").click()
     page.wait_for_selector("#inventoryHome.active")
     page.locator("#inventoryHome .back").click()
@@ -1193,7 +1408,7 @@ def run_checks(page, backend):
         if screen != "home":
             page.locator("#globalHomeButton").click()
         page.wait_for_selector("#home.active")
-    return dict(result="PASS", shared_creation_workspace="PASS", duplicate_stock_choices="PASS", bin_retirement="PASS", bin_and_part_names="PASS", sub_bins_follow_parent="PASS", vehicle_administration="PASS", chassis_bin_sequence="PASS", shared_chassis_compatibility="PASS", screens_with_home_navigation=len(screens), crew_search_first="PASS", combined_location_bin="PASS", exact_vehicle_selection="PASS",
+    return dict(result="PASS", v2_home_hierarchy_and_responsive_layouts="PASS", v2_auth_role_and_direct_api_gates="PASS", v2_login_return_session_and_logout="PASS", v2_required_password_change="PASS", public_admin_access_requests="PASS", shared_creation_workspace="PASS", duplicate_stock_choices="PASS", bin_retirement="PASS", bin_and_part_names="PASS", sub_bins_follow_parent="PASS", vehicle_administration="PASS", chassis_bin_sequence="PASS", shared_chassis_compatibility="PASS", screens_with_home_navigation=len(screens), crew_search_first="PASS", combined_location_bin="PASS", exact_vehicle_selection="PASS",
                 known_null_and_zero_use="PASS", explicit_initials_all_paths="PASS", use_retry_idempotency="PASS",
                 pending_use_navigation="PASS", read_only_activity_history="PASS",
                 management_and_fast_move="PASS", ledger_events=len(backend.events), successful_inventory_requests=len(backend.writes),
@@ -1249,9 +1464,9 @@ def workspace_checks(page,backend):
     assert backend.drafts[second]['x']==old_x+70
     # Independent browser context sees the same drafts/photos/positions without device persistence.
     context=page.context.browser.new_context(viewport={'width':390,'height':844})
-    other=context.new_page();other.route('**/rest/v1/**',backend.route);other.route('**/storage/v1/**',backend.route)
+    other=context.new_page();other.route('**/auth/v1/**',backend.route);other.route('**/rest/v1/**',backend.route);other.route('**/storage/v1/**',backend.route)
     other.on('dialog',lambda dialog:dialog.accept())
-    other.goto(base_url);other.wait_for_function('vehicleRegistryReady')
+    other.goto(base_url);other.wait_for_function('vehicleRegistryReady && portalAuth.ready');sign_in(other,'staff')
     other.evaluate('openInventoryWorkspace()');other.evaluate('(id)=>workspaceSelect(id)',second)
     assert other.input_value('#workspacePartName')=='Workspace test fan'
     assert other.input_value('#workspaceQuantity')==''
@@ -1352,6 +1567,7 @@ try:
         browser = playwright.chromium.launch(executable_path=os.environ.get("CHROMIUM_PATH", "/usr/bin/chromium"), headless=True, args=["--no-sandbox"])
         page = browser.new_page(viewport={"width": 1280, "height": 1000})
         page.set_default_timeout(15000)
+        page.route("**/auth/v1/**", backend.route)
         page.route("**/rest/v1/**", backend.route)
         page.route("**/storage/v1/**", backend.route)
         page.on("pageerror", lambda error: runtime_errors.append(str(error)))

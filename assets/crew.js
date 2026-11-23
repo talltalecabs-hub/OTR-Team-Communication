@@ -123,7 +123,7 @@ async function finishUsePart(){
   status.textContent="Recording part use…";
   let confirmed=false;
   try{
-    const response=await fetch(`${SUPABASE_URL}/rest/v1/rpc/use_inventory_part`,{method:"POST",headers:inventoryEventHeaders(request.p_actor_initials),body:JSON.stringify(request)});
+    const response=await portalFetch(`${SUPABASE_URL}/rest/v1/rpc/use_inventory_part`,{method:"POST",headers:inventoryEventHeaders(request.p_actor_initials),body:JSON.stringify(request)});
     const result=await response.json();
     if(!response.ok){
       const knownRejection=response.status>=400&&response.status<500;
@@ -166,7 +166,7 @@ async function openInventoryEventHistory(){
   const wrap=document.getElementById("inventoryEventList");
   wrap.textContent="Loading inventory activity…";
   try{
-    const response=await fetch(`${SUPABASE_URL}/rest/v1/inventory_events?select=*&order=created_at.desc&limit=100`,{headers:{apikey:SUPABASE_KEY}});
+    const response=await portalFetch(`${SUPABASE_URL}/rest/v1/inventory_events?select=*&order=created_at.desc&limit=100`,{headers:{apikey:SUPABASE_KEY}});
     if(!response.ok) throw new Error("Inventory activity is not available yet.");
     const events=await response.json();
     wrap.innerHTML=events.length?events.map(event=>{

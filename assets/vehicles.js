@@ -49,7 +49,7 @@ async function saveVehicleAdmin(activeOverride=null){
   const controls=[...document.querySelectorAll('#adminVehicleEdit input,#adminVehicleEdit select,#adminVehicleEdit .actions button')];
   vehicleAdminPending=true;controls.forEach(control=>control.disabled=true);status.textContent='Saving vehicle…';
   try{
-    const response=await fetch(`${SUPABASE_URL}/rest/v1/rpc/save_vehicle_registry`,{method:'POST',headers:inventoryEventHeaders(actor),body:JSON.stringify({p_vehicle_code:current.vehicle_code,p_revision:current.revision||0,p_changes:changes,p_actor_initials:actor})});
+    const response=await portalFetch(`${SUPABASE_URL}/rest/v1/rpc/save_vehicle_registry`,{method:'POST',headers:inventoryEventHeaders(actor),body:JSON.stringify({p_vehicle_code:current.vehicle_code,p_revision:current.revision||0,p_changes:changes,p_actor_initials:actor})});
     const result=await response.json();if(!response.ok)throw new Error(result.code==='23505'?'A vehicle with this name already exists in this chassis.':result.message||'Vehicle update was rejected.');
     if(result.vehicle_code!==current.vehicle_code)throw new Error('The saved vehicle could not be confirmed.');
     if(Object.entries(changes).some(([key,value])=>key==='designation'?(result[key]||'')!==value:result[key]!==value)){vehicleAdminCurrent=result;throw new Error('The vehicle already exists with different details. These edits have not been saved; review them and save again.');}

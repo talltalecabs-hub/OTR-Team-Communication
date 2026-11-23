@@ -1,126 +1,69 @@
 # OTR Team Portal
 
-Trackside-friendly team feedback, post-event reporting, administration, and shared inventory for Open Throttle Racing.
+A touch-friendly portal for Open Throttle Racing: crew forms, inventory, labels and team administration. GitHub Pages publishes the root of `main`; Supabase is authoritative for shared data and authentication.
 
-## Current release
+## V2.0
 
-V1.3.4 uses GitHub Pages, with Supabase authoritative for shared submissions, inventory, and the exact vehicle registry. Mobile inventory travels with the team; Backstock stays at the shop. Each race chassis has independent Cart A/B locations. Failed submissions stay in a device-local queue and retry when connectivity returns. Current counts change as the crew works; the historical seed is not the live inventory count.
+V2 adds a cleaner homepage and the exact Driver’s Lounge → Inventory → paired Feedback / Post-Event Crew Questionnaire → paired Report a Problem / Leave an Idea → Work in the Shop hierarchy. The logo stays; the text heading is **Team Portal**.
 
-V1.3.0 adds a search-first crew workflow, atomic Use Part consumption, required initials for inventory changes, and an append-only activity ledger. It also includes the later bin/part refinement: searchable bin contents, direct Not Found and editable notes on part detail, and single-face 2×1 part labels. See [Inventory crew workflow](docs/inventory-crew-workflow.md) and [Bin, part, and label UX](docs/bin-part-label-ux.md) for behavior, local checks, and release requirements.
+Email/password sign-in protects Inventory Management and Administrative. Public inventory search, bins/parts, **Use Part** and public communication forms stay open. Staff/Manager and Admin are explicit server-controlled roles; unassigned accounts have no management access. The sign-in page also accepts Admin access requests for review without granting a role automatically.
 
-V1.3.1 adds an **Add Another Part** button after a successful inventory addition. It opens a clean entry and focuses the part name without creating another stock record. No database change is needed.
+Read [V2 auth, preservation and rollout](docs/v2-auth-rollout.md) before deployment. The migration refuses to enable protection without a confirmed, active owner Admin. Owner credentials are provisioned separately and never committed.
 
-V1.3.2 continues chassis Bin IDs such as **E92-023**, with an editable suggested ID, and adds multi-chassis compatibility on new and existing parts. A shared F22/F30 part remains one stock record with one quantity and its existing physical location. See [Bin numbering and shared parts](docs/chassis-bins-and-shared-parts.md).
+## Preserved production work
 
-V1.3.3 adds **Administrative → Vehicle Registry** for shared add/edit/remove/restore actions with initials and change history. Phoenix #69x is the displayed replacement for Hulk; stable vehicle links are retained. See [Vehicle administration](docs/vehicle-administration.md).
+The verified starting main is V1.3.4 at `90610eb61d4a96b587bffaad339b8a544c628e46`. V2 retains:
 
-V1.3.4 adds **Parts & Labels**, a shared creation board with autosaved drafts, photo intake, duplication, drag/keyboard movement, and direct label previews. Incoming stock with a possible match requires Add / Replace / Separate confirmation. Bin Management can rename a bin or move its entire contents to Backstock/another bin before deleting it from available choices. Part names are editable, and sub-bins follow their parent cart. See [Inventory creation and bin management](docs/inventory-creation-workspace.md).
+- The exact vehicle registry, Phoenix #69x’s stable identity, and administrative add/edit/remove/restore history.
+- Mobile/Backstock stock, independent chassis Cart A/B groups, parent/sub-bin inheritance, reserved `000` loose-stock bins, and editable chassis-series Bin IDs.
+- Shared inventory drafts/photos/positions, duplicate/move cards, Add Another Part, Add/Replace/Separate intake, bin retirement and editable part/bin names.
+- Multi-chassis compatibility with one shared count, null/uncounted quantities, source units and workbook provenance.
+- Initials on inventory changes, immutable audit history, atomic/idempotent Use Part and full/partial moves.
+- 4×6-inch, 25×50-mm and 150×100-mm label presets and stable printed identities.
+- Feedback, operational forms, event questionnaires, device-local submission retries, and browser/back navigation.
 
-## Project structure
+Current stock changes as the crew works. The historical 297-record/690-unit seed and 215-label F22/E92 workbook are verification fixtures, not current live counts. Never reseed production to deploy V2.
 
-```text
-index.html                 Portal screens and accessible page structure
-assets/styles.css          Visual system and responsive layout
-assets/config.js           Public Supabase project configuration
-assets/core.js             Navigation, shared state, and UI utilities
-assets/submissions.js      Feedback, post-event, admin, and offline queue
-assets/inventory.js        Supabase-backed Inventory Assistant
-assets/labels.js           Bin/part assistant, 4x6 bin labels, and 2x1 part labels
-assets/crew.js             Use Part, initials, and inventory activity viewer
-assets/bootstrap.js        Startup checks and queue synchronization
-supabase/migrations/20261114225322_inventory_crew_workflow.sql
-                           Prepared inventory ledger, write guards, and atomic Use/Move RPCs
-supabase/schema.sql        Inventory table and current beta policies
-supabase/vehicles_schema.sql
-                           Exact vehicle registry, inventory assignment key, and 23 vehicle seeds
-supabase/label_assistant_schema.sql
-                           First-class bins, bin assignment RPC, reorder flags, and physical tag IDs
-supabase/inventory_count_schema.sql
-                           Unknown counts, printed quantity units, and parent/sub-bin hierarchy
-supabase/inventory_stock_category_schema.sql
-                           Mobile/Backstock classification, per-chassis Cart A/B bin locations
-supabase/e92_cart_assignments.sql
-                           One-time E92 cart placements confirmed by the team
-supabase/update_inventory_f22_e92_20261108.sql
-                           Prepared scoped replacement with private backups and rerun protection
-data/inventory/f22-e92-2026-11-08.json
-                           Canonical transcription of 215 workbook labels and source evidence
-supabase/submissions_schema.sql
-                           Submission table and current beta policies
-supabase/seed_inventory.sql
-                           Corrected 297-record inventory seed
-supabase/repair_001_inventory_id_collisions.sql
-                           Production repair applied on 2026-08-28
-```
+## Structure
 
-The Supabase key in `assets/config.js` is a public/publishable browser key. Access is controlled by Supabase row-level security policies.
+- `index.html`: existing screens plus the V2 homepage and sign-in/access-request UI.
+- `assets/v2.css`, `assets/brand/`: V2 presentation and local SVG wordmark.
+- `assets/auth.js`: Supabase session lifecycle, explicit roles, destination return and protected request/route/action boundaries.
+- `assets/{core,submissions,inventory,crew,labels,workspace,intake,bin-management,vehicles}.js`: existing portal workflows.
+- `assets/vendor/`: pinned local Supabase JS and QR bundles with licenses and integrity metadata.
+- `assets/config.js`: public project URL/key and application version; no privileged keys.
+- `supabase/migrations/`: database changes, including the V2 access migration.
+- `scripts/`: static, browser and isolated PostgreSQL checks.
 
-## Inventory navigation
+## Preview and validate
 
-Inventory is the first home-page button. The Inventory landing offers **Mobile
-Inventory Search** and **Inventory Management**. Mobile search opens immediately
-across chassis, with optional chassis/location filters and Open Bins. Cards show
-cart/location and Bin ID together. Opening a part prioritizes **Use Part**, which
-records consumption against an exact vehicle without changing stock placement.
+Serve the repository with a static web server. The backend must have the V2 migration and authorized accounts for real protected operations; the browser regression suite provides an isolated fixture instead.
 
-Inventory Management contains Backstock, Search All, Add Part, Bins & Placement,
-Fast Move, and Inventory Activity. Corrections, flags, placement, and label actions
-remain available through a part's management screen. Not Found and editable Notes
-are also available directly on part detail, with required initials for changes.
-Open Bins lists chassis bins in numeric order, including 000 for loose stock;
-opening a bin shows only its direct contents in one full-width column, with a
-search limited to that bin and separate links to sub-bins.
-
-## Local preview
-
-Serve this directory with any static web server, then open `index.html`. Avoid opening it directly from the filesystem because browser security rules can behave differently from GitHub Pages.
-
-## Deployment
-
-GitHub Pages publishes the root of `main`. The V1.3.0 rollout was authorized on 2026-11-16. V1.3.0 requires a coordinated database/frontend release and refreshed browser tabs; see the [compatibility and rollout notes](docs/inventory-crew-workflow.md#compatibility-and-future-rollout).
-
-## Required checks
-
-- Every JavaScript file passes a syntax check.
-- Every inline HTML handler resolves to a function.
-- Home navigation works from every screen.
-- Quick and detailed feedback remain separate submission types.
-- Post-Event Reports appear in the Admin viewer.
-- Offline submissions appear under Admin → Local Queue.
-- Historical V1 seed remains 297 records / 690 units. Current shared inventory may include later crew changes.
-- Prepared replacement has 92 F22 and 123 E92 labels, five unknown counts, and printed set/lot units. F30 and Boxster rows are preserved exactly.
-- Chassis selectors offer the seeded exact vehicle registry (23 vehicles across race, street, tow, and trailer platforms).
-- Label Assistant handlers resolve, bin labels remain 4×6, part labels are single-face 2×1 with uppercase wording, and the historical inventory seed remains unchanged.
-- Use Part and Fast Move commit inventory changes and ledger events atomically.
-- Inventory writes require visible initials; audit history is append-only for portal users.
-- Known stock cannot be consumed below zero; unknown stock remains uncounted after use.
-
-For a new empty environment, install `supabase/schema.sql` and `supabase/vehicles_schema.sql` before the dependent inventory schemas. The current deployment already has the exact vehicle registry; V1.3.0 does not replace or reseed it.
-
-The latest label handoff replaces the earlier part-tag fold-wrap requirement. Bin labels remain full 4×6 labels. Individual part labels now target one 2×1-inch face with uppercase wording and a placeholder barcode. Stable tag/inventory identities and source provenance are preserved. Final printer/scanner integration and calibration are deferred; see [Bin, part, and label UX](docs/bin-part-label-ux.md).
-
-The earlier F22/E92 production activation is complete. See [F22/E92 inventory update](docs/inventory-f22-e92-update.md) for source totals, private backups, rollout results, and deployment order for another environment: label schema, count schema, then replacement SQL. Frontend and database rollout must be coordinated; merging the frontend alone does not update shared inventory. Do not rerun the historical seed after the replacement.
-
-See [Mobile, Backstock, and cart locations](docs/inventory-mobile-backstock-carts.md) for inventory category selection, cart assignment, the confirmed E92 map, and the V1.1-to-V1.2 upgrade. Quantities, part categories, bin identities, and source records are preserved.
-
-Run the repeatable static checks with:
-
-```text
+```sh
 node scripts/validate.mjs
+python scripts/test_portal.py
 ```
 
-For isolated PostgreSQL regression tests (no production connection):
+With PGlite installed outside the checkout, set `PGLITE_MODULE` to its `dist/index.js`, then run each SQL suite:
 
-```bash
-npm install --prefix /tmp/otr-db-test --no-audit --no-fund --ignore-scripts @electric-sql/pglite@0.3.14
-PGLITE_MODULE=/tmp/otr-db-test/node_modules/@electric-sql/pglite/dist/index.js node scripts/test_inventory_update.mjs
-PGLITE_MODULE=/tmp/otr-db-test/node_modules/@electric-sql/pglite/dist/index.js node scripts/test_inventory_crew.mjs
+```sh
+node scripts/test_inventory_update.mjs
+node scripts/test_inventory_crew.mjs
+node scripts/test_vehicle_admin.mjs
+node scripts/test_inventory_workspace.mjs
+node scripts/test_auth_access.mjs
 ```
 
-With Python Playwright and Chromium installed, `python scripts/test_portal.py` runs local browser regressions against a simulated Supabase backend. It never connects to production. Set `CHROMIUM_PATH` if needed and `OTR_TEST_OUTPUT` to retain screenshots in a chosen directory.
+The browser suite needs Python Playwright and Chromium (`CHROMIUM_PATH` may override `/usr/bin/chromium`). `OTR_TEST_OUTPUT` chooses a screenshot/PDF directory. Tests never connect to production.
 
-## Beta security note
+## Deployment and access
 
-The current V1 deployment intentionally allows anonymous inventory reads/inserts/updates and anonymous Admin reads. Replace those beta policies with authenticated crew access before broad public use.
+Apply the reviewed V2 migration and frontend together using the [rollout sequence](docs/v2-auth-rollout.md). Do not replay the old beta schema files over secured production: their anonymous policies predate Auth. Public Use Part has a constrained server operation; anonymous clients have no general inventory UPDATE privilege. Management requires both a valid Auth session and the assigned role. Auth does not replace visible initials.
 
-V1.3.0 initials provide recorded accountability, not authenticated identity. The ledger adds database-enforced auditing within the existing beta access model; it does not introduce authentication.
+Temporary-password accounts must set their own password before management access is enabled; the database enforces this requirement. Signed-in users can also change their password from the header.
+
+Sessions use tab-scoped sessionStorage, with an in-memory fallback. Draft/photo data remains in Supabase; the existing offline submission queue is retained. No password or server key is stored in application files.
+
+## Workflow references
+
+[Shared creation and bin management](docs/inventory-creation-workspace.md) · [Bin IDs and compatibility](docs/chassis-bins-and-shared-parts.md) · [Crew workflow and ledger](docs/inventory-crew-workflow.md) · [Vehicle administration](docs/vehicle-administration.md) · [Inventory activation history](docs/inventory-f22-e92-update.md) · [Mobile, Backstock and carts](docs/inventory-mobile-backstock-carts.md)

@@ -1,0 +1,2 @@
+# Preserve the pinned upstream bundle, including multiline string whitespace.
+assets/vendor/supabase-js-2.119.2.js -whitespace

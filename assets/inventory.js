@@ -30,7 +30,7 @@ async function loadInventory(){
   if(loadingCount) loadingCount.textContent="";
 
   try{
-    const resp=await fetch(`${SUPABASE_URL}/rest/v1/inventory_items?select=*&order=item_name.asc`,{
+    const resp=await portalFetch(`${SUPABASE_URL}/rest/v1/inventory_items?select=*&order=item_name.asc`,{
       headers:{"apikey":SUPABASE_KEY}
     });
 
@@ -255,8 +255,10 @@ function openInventoryDetail(key,historyMode="push",justAdded=false){
       <div class="actions">
         <button class="primary" type="button" onclick="openUsePart()" ${item.quantity===0?"disabled":""}>Use Part</button>
         <button class="secondary" type="button" onclick="openInventoryItemManagement()">Inventory Management</button>
-        <button id="inventoryDetailNotFound" class="danger" type="button" onclick="markInventoryNotFound('inventoryDetailInitials')">Not Found</button>
+        <button id="inventoryDetailNotFound" class="danger requires-staff" type="button" onclick="markInventoryNotFound('inventoryDetailInitials')">Not Found</button>
       </div>
+      <div class="public-inventory-notes"><h3>Notes</h3><p>${escapeHtml(item.notes||'No notes recorded.')}</p></div>
+      <div class="requires-staff">
       <label for="inventoryDetailName">Part Name</label><input id="inventoryDetailName" maxlength="200" value="${escapeHtml(item.item_name||'')}" />
       <button id="inventoryNameSave" class="secondary" type="button" onclick="saveInventoryPartName()">Save Part Name</button><p id="inventoryNameStatus" class="small" role="status"></p>
       <h3>Compatible chassis</h3><div id="detailCompatibleChassis" class="compatibility-options"></div>
@@ -267,7 +269,7 @@ function openInventoryDetail(key,historyMode="push",justAdded=false){
       <label for="inventoryDetailInitials">Initials</label>
       <input id="inventoryDetailInitials" class="inventory-initials" type="text" maxlength="8" autocapitalize="characters" autocomplete="off" required placeholder="Required for name, Notes, compatibility or Not Found" />
       <div class="actions"><button id="inventoryDetailSaveNotes" class="secondary" type="button" onclick="saveInventoryNotes()">Save Notes</button></div>
-      <p id="inventoryDetailNoteStatus" class="small" role="status" aria-live="polite"></p>
+      <p id="inventoryDetailNoteStatus" class="small" role="status" aria-live="polite"></p></div>
     </div>`;
   renderInventoryCompatibility("detail",item.platform,inventoryCompatibleChassis(item));
   prepareInventoryNameEditor(item);
@@ -401,12 +403,14 @@ async function persistInventoryPatch(item,patch,initials){
   if(!initials) return false;
   inventoryPatchPending=true;
   try{
-    const resp=await fetch(`${SUPABASE_URL}/rest/v1/inventory_items?id=eq.${encodeURIComponent(item.id)}`,{
+    const resp=await portalFetch(`${SUPABASE_URL}/rest/v1/inventory_items?id=eq.${encodeURIComponent(item.id)}`,{
       method:"PATCH",
-      headers:{...inventoryEventHeaders(initials),"Prefer":"return=minimal"},
+      headers:{...inventoryEventHeaders(initials),"Prefer":"return=representation"},
       body:JSON.stringify({...patch,updated_at:new Date().toISOString()})
     });
     if(!resp.ok) throw new Error(`Inventory update ${resp.status}: ${await resp.text()}`);
+    const saved=await resp.json();
+    if(!saved?.some(row=>row.id===item.id))throw new Error('The record was not updated. Refresh account access before retrying.');
     return true;
   }catch(error){
     console.error("Inventory update could not be confirmed",error);

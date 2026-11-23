@@ -6,7 +6,7 @@ function queueSubmission(data){const arr=getStore();arr.unshift(data);setStore(a
 
 function toDatabaseRow(data){return {submission_type:data.type||"feedback",category:data.category||null,quick_feedback:data.text||data.quick||null,answers:data.answers||null,additional_details:data.detail||null,submitted_name:data.name||null,anonymous:data.anonymous!==false,app_version:APP_VERSION,source:"web"};}
 async function sendToSupabase(data){
-  const response=await fetch(`${SUPABASE_URL}/rest/v1/submissions`,{method:"POST",headers:{"apikey":SUPABASE_KEY,"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(toDatabaseRow(data))});
+  const response=await portalFetch(`${SUPABASE_URL}/rest/v1/submissions`,{method:"POST",headers:{"apikey":SUPABASE_KEY,"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(toDatabaseRow(data))});
   if(!response.ok){let msg="";try{msg=await response.text();}catch(e){};throw new Error(`Supabase insert failed: ${response.status} ${msg}`);}
   return true;
 }
@@ -201,7 +201,7 @@ async function submitPostEvent(){
   setSubmitStatus("Submitting…");
   await submitData(data);
 
-  if(btn){btn.disabled=false;btn.textContent="Submit Post-Event Report";}
+  if(btn){btn.disabled=false;btn.textContent="Submit Post-Event Crew Questionnaire";}
 }
 
 async function genericSubmit(field,type){
@@ -261,7 +261,7 @@ async function loadAdminSubmissions(){
   if(list) list.innerHTML="";
 
   try{
-    const response=await fetch(
+    const response=await portalFetch(
       `${SUPABASE_URL}/rest/v1/submissions?select=*&order=created_at.desc&limit=500`,
       {headers:{"apikey":SUPABASE_KEY}}
     );
@@ -306,7 +306,7 @@ function renderSharedSubmissions(){
   }
 
   list.innerHTML=rows.map(item=>{
-    const type=escapeHtml(item.submission_type||"Submission");
+    const type=escapeHtml(submissionDisplayName(item.submission_type));
     const category=escapeHtml(item.category||"");
     const quick=escapeHtml(item.quick_feedback||"");
     const details=escapeHtml(item.additional_details||"");
@@ -397,3 +397,7 @@ function renderAdmin(){
 }
 
 
+
+function submissionDisplayName(type){
+  return ({post_event_report:'Post-Event Crew Questionnaire',admin_access_request:'Admin Access Request','Improvement idea':'Leave an Idea'})[type]||type||'Submission';
+}

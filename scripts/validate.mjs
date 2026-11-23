@@ -18,7 +18,7 @@ for(const file of allJavascriptFiles){
 
 const html=readFileSync(join(root, "index.html"), "utf8");
 const javascript=javascriptFiles.map(file=>readFileSync(file, "utf8")).join("\n");
-const handlerNames=[...(html+"\n"+javascript).matchAll(/\bon(?:click|change|input)="([A-Za-z_$][\w$]*)\s*\(/g)]
+const handlerNames=[...(html+"\n"+javascript).matchAll(/\bon(?:click|change|input|submit)="([A-Za-z_$][\w$]*)\s*\(/g)]
   .map(match=>match[1]);
 const functionNames=new Set(
   [...javascript.matchAll(/^(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/gm)]

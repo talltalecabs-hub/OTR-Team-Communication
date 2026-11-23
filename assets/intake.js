@@ -101,13 +101,13 @@ async function confirmInventoryAddition(){
   }finally{review.busy=false;}
 }
 async function intakeRequest(name,data,actor){
-  const response=await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`,{method:'POST',headers:inventoryEventHeaders(actor),body:JSON.stringify(data)});
+  const response=await portalFetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`,{method:'POST',headers:inventoryEventHeaders(actor),body:JSON.stringify(data)});
   const result=await response.json();if(!response.ok){const error=new Error(result.message||'Inventory change was rejected.');error.status=response.status;error.code=result.code;throw error;}return result;
 }
 
 async function loadInventoryTagAliases(){
   try{
-    const response=await fetch(`${SUPABASE_URL}/rest/v1/inventory_workspace_drafts?select=tag_id,inventory_item_id&inventory_item_id=not.is.null`,{headers:{apikey:SUPABASE_KEY},cache:'no-store'});
+    const response=await portalFetch(`${SUPABASE_URL}/rest/v1/rpc/inventory_tag_links`,{headers:{apikey:SUPABASE_KEY},cache:'no-store'});
     if(!response.ok)return;
     const rows=await response.json();if(!Array.isArray(rows))return;
     const aliases=new Map();for(const row of rows)if(row.inventory_item_id){if(!aliases.has(row.inventory_item_id))aliases.set(row.inventory_item_id,[]);aliases.get(row.inventory_item_id).push(row.tag_id);}
