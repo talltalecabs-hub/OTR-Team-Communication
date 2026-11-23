@@ -774,8 +774,89 @@ def v2_auth_checks(page,backend):
     assert_handlers(page)
 
 
+def technical_other_vehicle_checks(page, backend):
+    page.goto(base_url);page.wait_for_function('vehicleRegistryReady && portalAuth.ready')
+    assert page.evaluate('portalAuth.session===null')
+    registry_before=copy.deepcopy(backend.vehicles)
+    page.evaluate("openOperationalForm('technicalReport')")
+    assert page.locator('#op-vehicle').is_enabled()
+    assert '__OTHER_VEHICLE__' in page.locator('#op-vehicle option').evaluate_all('els=>els.map(e=>e.value)')
+    assert page.locator('#op-vehicle_other').is_hidden()
+    assert page.locator('#op-vehicle_other').is_disabled()
+    page.select_option('#op-vehicle','__OTHER_VEHICLE__')
+    assert page.input_value('#op-vehicle_category')=='Other'
+    assert page.locator('#op-vehicle_other').is_visible()
+    assert page.locator('#op-vehicle_other').evaluate('(e)=>e.required')
+    page.fill('#op-finding','Customer reports coolant loss after a track session.')
+    before=len(backend.submissions)
+    for blank in ['', '   ']:
+        page.fill('#op-vehicle_other',blank);page.evaluate('submitOperationalForm()')
+        assert len(backend.submissions)==before
+        assert page.locator('#operationalForm.active').count()==1
+        assert page.evaluate('document.activeElement.id')=='op-vehicle_other'
+    customer="Customer's Honda Civic — #17 / ABC123"
+    page.fill('#op-vehicle_other','  '+customer+'  ')
+    for width,height,label in [(390,844,'iphone'),(800,1280,'fire')]:
+        page.set_viewport_size({'width':width,'height':height})
+        assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+        page.screenshot(path=str(OUTPUT/('technical-other-'+label+'.png')),full_page=True)
+    page.set_viewport_size({'width':1280,'height':1000})
+    page.evaluate('submitOperationalForm()')
+    assert len(backend.submissions)==before+1
+    row=backend.submissions[-1];answer=row['answers']
+    assert row['submission_type']=='technical_car_report'
+    assert row['quick_feedback']=='Technical / Car Report • '+customer
+    assert answer['vehicle_category']=='Other'
+    assert answer['vehicle']=='Other / non-fleet'
+    assert answer['vehicle_source']=='Other / non-fleet'
+    assert answer['vehicle_other']==answer['vehicle_name']==customer
+    assert answer['vehicle_label']=='Other — '+customer
+    assert backend.vehicles==registry_before
+
+    # A customer car can still have a known chassis; fleet selection drops custom details.
+    page.evaluate("openOperationalForm('technicalReport')")
+    page.select_option('#op-vehicle_category','E92')
+    page.select_option('#op-vehicle','__OTHER_VEHICLE__')
+    assert page.input_value('#op-vehicle_category')=='E92'
+    page.fill('#op-vehicle_other','Do not include this after choosing a fleet car')
+    page.select_option('#op-vehicle','E92-CHERRY')
+    assert page.locator('#op-vehicle_other').is_hidden()
+    assert page.locator('#op-vehicle_other').is_disabled()
+    page.fill('#op-finding','Fleet cooling inspection.')
+    page.evaluate('submitOperationalForm()')
+    fleet_answer=backend.submissions[-1]['answers']
+    assert fleet_answer['vehicle']=='E92-CHERRY'
+    assert fleet_answer['vehicle_name']==next(v['vehicle_name'] for v in registry_before if v['vehicle_code']=='E92-CHERRY')
+    assert 'vehicle_other' not in fleet_answer
+    assert 'vehicle_source' not in fleet_answer
+
+    # Selecting the non-fleet category opens the entry field; a new form has no stale text.
+    page.evaluate("openOperationalForm('technicalReport')")
+    page.select_option('#op-vehicle_category','Other')
+    assert page.input_value('#op-vehicle')=='__OTHER_VEHICLE__'
+    page.fill('#op-vehicle_other','Discarded customer vehicle')
+    page.evaluate('resetAndHome()');page.wait_for_selector('#home.active')
+    page.evaluate("openOperationalForm('technicalReport')")
+    assert page.input_value('#op-vehicle_other')==''
+    assert page.locator('#op-vehicle_other').is_hidden()
+    assert page.locator('#op-vehicle_other').is_disabled()
+    for key in ['incidentReport','driverPre','driverPost']:
+        page.evaluate('(key)=>openOperationalForm(key)',key)
+        assert page.locator('#op-vehicle_other').count()==0
+        assert 'Other' not in page.locator('#op-vehicle_category option').evaluate_all('els=>els.map(e=>e.value)')
+        page.select_option('#op-vehicle_category','E92')
+        options=page.locator('#op-vehicle option').evaluate_all('els=>els.map(e=>e.value).filter(Boolean)')
+        assert set(options)=={v['vehicle_code'] for v in registry_before if v['platform']=='E92' and v.get('is_active',True)}
+    page.evaluate('openMobileInventory()');page.wait_for_function('inventoryBackendReady')
+    open_use(page,'E92-KNOWN')
+    assert '__OTHER_VEHICLE__' not in page.locator('#usePartVehicle option').evaluate_all('els=>els.map(e=>e.value)')
+    assert backend.vehicles==registry_before
+    assert_handlers(page)
+
+
 def run_checks(page, backend):
     v2_auth_checks(page,backend)
+    technical_other_vehicle_checks(page,backend)
     page.goto(base_url)
     page.wait_for_function("vehicleRegistryReady && portalAuth.ready")
     assert len(REGISTRY) == page.evaluate("vehicleRegistry.length") == 23
@@ -1408,7 +1489,7 @@ def run_checks(page, backend):
         if screen != "home":
             page.locator("#globalHomeButton").click()
         page.wait_for_selector("#home.active")
-    return dict(result="PASS", v2_home_hierarchy_and_responsive_layouts="PASS", v2_auth_role_and_direct_api_gates="PASS", v2_login_return_session_and_logout="PASS", v2_required_password_change="PASS", public_admin_access_requests="PASS", shared_creation_workspace="PASS", duplicate_stock_choices="PASS", bin_retirement="PASS", bin_and_part_names="PASS", sub_bins_follow_parent="PASS", vehicle_administration="PASS", chassis_bin_sequence="PASS", shared_chassis_compatibility="PASS", screens_with_home_navigation=len(screens), crew_search_first="PASS", combined_location_bin="PASS", exact_vehicle_selection="PASS",
+    return dict(result="PASS", v2_home_hierarchy_and_responsive_layouts="PASS", v2_auth_role_and_direct_api_gates="PASS", v2_login_return_session_and_logout="PASS", v2_required_password_change="PASS", public_admin_access_requests="PASS", technical_other_vehicle="PASS", shared_creation_workspace="PASS", duplicate_stock_choices="PASS", bin_retirement="PASS", bin_and_part_names="PASS", sub_bins_follow_parent="PASS", vehicle_administration="PASS", chassis_bin_sequence="PASS", shared_chassis_compatibility="PASS", screens_with_home_navigation=len(screens), crew_search_first="PASS", combined_location_bin="PASS", exact_vehicle_selection="PASS",
                 known_null_and_zero_use="PASS", explicit_initials_all_paths="PASS", use_retry_idempotency="PASS",
                 pending_use_navigation="PASS", read_only_activity_history="PASS",
                 management_and_fast_move="PASS", ledger_events=len(backend.events), successful_inventory_requests=len(backend.writes),

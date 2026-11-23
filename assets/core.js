@@ -137,10 +137,12 @@ const operationalFormDefinitions = {
     identityField: "reporter",
     summaryField: "vehicle_name",
     vehicleField: "vehicle",
+    allowOtherVehicle: true,
     fields: [
       {id:"reporter",label:"Reporter / initials",type:"text",placeholder:"Optional"},
       {id:"vehicle_category",label:"Chassis category",type:"vehicleCategory",required:true},
       {id:"vehicle",label:"Exact vehicle",type:"vehicleExact",required:true,wide:true},
+      {id:"vehicle_other",label:"Other vehicle / customer car",type:"text",placeholder:"Make, model, car # or customer reference",required:true,wide:true,otherVehicleOnly:true},
       {id:"session",label:"When noticed",type:"select",options:["Before session","During session","After session","In shop","Other"]},
       {id:"urgency",label:"Urgency",type:"select",options:["Routine","Before next session","Stop and inspect"]},
       {id:"finding",label:"Finding or observation",type:"textarea",placeholder:"What happened, what you saw, or what changed.",required:true,wide:true},
@@ -389,19 +391,24 @@ function vehicleOptionsForCategory(category){
       || String(a.vehicle_name||"").localeCompare(String(b.vehicle_name||"")));
 }
 
-function refreshOperationalVehicleOptions(){
+const operationalOtherVehicleValue="__OTHER_VEHICLE__";
+
+function refreshOperationalVehicleOptions(changedField=""){
   const categoryEl=document.getElementById("op-vehicle_category");
   const vehicleEl=document.getElementById("op-vehicle");
   if(!vehicleEl) return;
 
+  const allowOther=operationalFormDefinitions[activeOperationalFormKey]?.allowOtherVehicle===true;
+  let previous=changedField==="vehicle_category"?"":vehicleEl.value;
+  if(allowOther && previous===operationalOtherVehicleValue && !categoryEl?.value) categoryEl.value="Other";
   const category=categoryEl?.value||"";
-  const previous=vehicleEl.value;
   const options=vehicleOptionsForCategory(category);
   const prompt=category
     ? (options.length ? "Choose exact vehicle…" : "No vehicles listed for this category")
     : "Choose chassis category first";
 
-  vehicleEl.innerHTML=`<option value="">${escapeHtml(prompt)}</option>`+
+  const placeholder=allowOther && !category?"Choose chassis or select Other…":allowOther && category==="Other"?"Choose a vehicle…":prompt;
+  vehicleEl.innerHTML=`<option value="">${escapeHtml(placeholder)}</option>`+
     options.map(vehicle=>{
       const status=String(vehicle.status||"Active").trim();
       const designation=String(vehicle.designation||"").trim();
@@ -409,10 +416,22 @@ function refreshOperationalVehicleOptions(){
       const suffix=status && status!=="Active" && !designationTokens.includes(status.toLowerCase())
         ? ` (${status})` : "";
       return `<option value="${escapeHtml(vehicle.vehicle_code)}">${escapeHtml(vehicleDisplayLabel(vehicle))}${escapeHtml(suffix)}</option>`;
-    }).join("");
-  vehicleEl.disabled=!category || !options.length;
+    }).join("")+(allowOther?`<option value="${operationalOtherVehicleValue}">Other — customer or non-fleet vehicle…</option>`:"");
+  vehicleEl.disabled=!allowOther && (!category || !options.length);
 
+  if(allowOther && category==="Other" && !previous) previous=operationalOtherVehicleValue;
   if(options.some(vehicle=>vehicle.vehicle_code===previous)) vehicleEl.value=previous;
+  else if(allowOther && previous===operationalOtherVehicleValue) vehicleEl.value=previous;
+
+  const otherInput=document.getElementById("op-vehicle_other");
+  if(otherInput){
+    const isOther=allowOther && vehicleEl.value===operationalOtherVehicleValue;
+    document.getElementById("op-vehicle_other-wrap").classList.toggle("hidden",!isOther);
+    otherInput.disabled=!isOther;
+    otherInput.required=isOther;
+    otherInput.setAttribute("aria-required",String(isOther));
+    if(!isOther) otherInput.value="";
+  }
 }
 
 async function loadVehicleRegistry(){
@@ -449,13 +468,17 @@ function operationalFieldHtml(field){
     return `<div class="question${wide}"><label for="${id}">${escapeHtml(field.label)}</label><select id="${id}" data-operational-field="${escapeHtml(field.id)}"><option value="">Choose one…</option>${options}</select></div>`;
   }
   if(field.type==="vehicleCategory"){
+    const allowOther=operationalFormDefinitions[activeOperationalFormKey]?.allowOtherVehicle===true;
     const options=internalVehicleCategories
       .map(category=>`<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`)
-      .join("");
-    return `<div class="question${wide}"><label for="${id}">${escapeHtml(field.label)}</label><select id="${id}" data-operational-field="${escapeHtml(field.id)}" onchange="refreshOperationalVehicleOptions()"><option value="">Choose chassis category…</option>${options}</select></div>`;
+      .join("")+(allowOther?`<option value="Other">Other / non-fleet</option>`:"");
+    return `<div class="question${wide}"><label for="${id}">${escapeHtml(field.label)}</label><select id="${id}" data-operational-field="${escapeHtml(field.id)}" onchange="refreshOperationalVehicleOptions('vehicle_category')"><option value="">Choose chassis category…</option>${options}</select></div>`;
   }
   if(field.type==="vehicleExact"){
-    return `<div class="question${wide}"><label for="${id}">${escapeHtml(field.label)}</label><select id="${id}" data-operational-field="${escapeHtml(field.id)}" disabled onchange="refreshOperationalVehicleOptions()"><option value="">Choose chassis category first</option></select></div>`;
+    return `<div class="question${wide}"><label for="${id}">${escapeHtml(field.label)}</label><select id="${id}" data-operational-field="${escapeHtml(field.id)}" disabled onchange="refreshOperationalVehicleOptions('vehicle')"><option value="">Choose chassis category first</option></select></div>`;
+  }
+  if(field.otherVehicleOnly){
+    return `<div id="${id}-wrap" class="question${wide} hidden"><label for="${id}">${escapeHtml(field.label)}</label><input id="${id}" data-operational-field="${escapeHtml(field.id)}" maxlength="160" placeholder="${escapeHtml(field.placeholder||"")}" disabled aria-required="false" /></div>`;
   }
   return `<div class="question${wide}"><label for="${id}">${escapeHtml(field.label)}</label><input id="${id}" data-operational-field="${escapeHtml(field.id)}" maxlength="160" placeholder="${escapeHtml(field.placeholder||"")}" /></div>`;
 }
@@ -491,6 +514,7 @@ function resetFormSection(id){
       field.value="";
     }
   });
+  if(id==="operationalForm") refreshOperationalVehicleOptions();
 }
 
 function resetAndHome(){
