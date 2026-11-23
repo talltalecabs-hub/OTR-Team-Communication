@@ -1,6 +1,6 @@
 // Supabase Auth owns credentials and refresh tokens. Only the tab session is
 // retained; inventory drafts stay on the server. Roles are verified by the API.
-const portalAuth={client:null,session:null,role:'public',ready:false,pending:null,resuming:false,busy:false,generation:0,refresh:null};
+const portalAuth={client:null,session:null,role:'public',passwordChangeRequired:false,ready:false,pending:null,resuming:false,busy:false,generation:0,refresh:null};
 const portalProtectedScreens={adminAssistant:'admin',adminSubmissions:'admin',admin:'admin',adminVehicles:'admin',adminVehicleEdit:'admin',inventoryManagement:'staff',inventoryItemManagement:'staff',inventoryEdit:'staff',inventoryAdd:'staff',inventoryWorkspace:'staff',inventoryIntakeReview:'staff',inventoryBinDelete:'staff',inventoryEventHistory:'staff',labelAssistantHome:'staff',binCreate:'staff',binAssignPart:'staff',partTag:'staff'};
 const portalProtectedEntries={
   admin:['openAdminAssistant','openFormSubmissions','loadAdminSubmissions','exportData','clearData','openVehicleAdmin','editVehicleAdmin'],
@@ -11,9 +11,9 @@ const portalProtectedMutations={
   staff:['saveInventoryCompatibility','changeInventoryStockCategory','saveInventoryNotes','persistInventoryPatch','saveInventoryVerification','markInventoryNeedsReview','markInventoryNotFound','addInventoryItem','retryLegacyInventoryAddition','completeLegacyInventoryAddition','saveBinCartLocation','insertInventoryBin','createInventoryBin','assignSelectedPartToBin','ensurePartTagId','preparePartTag','workspaceQueue','workspaceFlush','workspaceCreateCard','workspaceCopyPendingInventory','workspaceDuplicateCard','workspaceCommitCard','workspaceFinishCommit','workspaceArchiveCard','workspaceRestoreCard','workspaceUploadPhotos','workspaceAttachFiles','workspaceIntakeFiles','confirmInventoryAddition','saveInventoryPartName','saveInventoryBinName','deleteInventoryBin']
 };
 function portalHasRole(required='staff'){
-  return portalAuth.ready&&portalAuth.session?.access_token&&portalAuth.session.expires_at*1000>Date.now()&&(portalAuth.role==='admin'||required==='staff'&&portalAuth.role==='staff');
+  return portalAuth.ready&&!portalAuth.passwordChangeRequired&&portalAuth.session?.access_token&&portalAuth.session.expires_at*1000>Date.now()&&(portalAuth.role==='admin'||required==='staff'&&portalAuth.role==='staff');
 }
-function portalRoleLabel(){return portalAuth.role==='admin'?'Admin':portalAuth.role==='staff'?'Staff / Manager':'No management access';}
+function portalRoleLabel(){return portalAuth.passwordChangeRequired?'Set your password':portalAuth.role==='admin'?'Admin':portalAuth.role==='staff'?'Staff / Manager':'No management access';}
 function portalBackendHeaders(extra={}){
   const headers={apikey:SUPABASE_KEY,...extra};
   if(portalAuth.session?.access_token&&portalAuth.session.expires_at*1000>Date.now())headers.Authorization=`Bearer ${portalAuth.session.access_token}`;
@@ -48,6 +48,7 @@ async function portalFetch(resource,options={}){
 function portalIntentContext(){return {itemKey:currentInventoryItem?.local_key||null,binKey:currentInventoryBin?.id||null};}
 function requestPortalSignIn(intent=null,{historyMode='push'}={}){
   if(intent)portalAuth.pending={...intent,...portalIntentContext()};
+  if(portalAuth.session&&portalAuth.passwordChangeRequired){openPortalPasswordChange({historyMode});return;}
   const required=portalAuth.pending?.required||'staff';
   const label=required==='admin'?'Administrative':'Inventory Management';
   document.getElementById('signInTitle').textContent=required==='admin'?'Admin Sign In':'Team Sign In';
@@ -59,6 +60,7 @@ function requestPortalSignIn(intent=null,{historyMode='push'}={}){
 }
 function cancelPortalSignIn(){portalAuth.pending=null;portalBack('home');}
 function portalGuardScreen(id,historyMode='push'){
+  if(id==='changePassword'&&!portalAuth.session){requestPortalSignIn(null,{historyMode:'replace'});return false;}
   const required=portalProtectedScreens[id];
   if(!required||portalHasRole(required))return true;
   requestPortalSignIn({screen:id,required},{historyMode:historyMode==='none'?'replace':historyMode});return false;
@@ -90,6 +92,40 @@ function renderPortalAuth(){
   document.getElementById('portalAccountLabel').textContent=portalRoleLabel();
   document.getElementById('portalAccountEmail').textContent=portalAuth.session?.user?.email||'';
 }
+function clearPortalPasswordFields(){
+  ['signInPassword','passwordCurrent','passwordNew','passwordConfirm'].forEach(id=>{document.getElementById(id).value='';});
+}
+function openPortalPasswordChange({historyMode='push'}={}){
+  if(!portalAuth.session){requestPortalSignIn();return;}
+  clearPortalPasswordFields();
+  document.getElementById('passwordChangeReason').textContent=portalAuth.passwordChangeRequired?'Choose your own password before opening management tools. Your original destination will open after it is saved.':'Update the password for your team account.';
+  document.getElementById('passwordChangeStatus').textContent='';
+  showScreen('changePassword',{historyMode});
+  document.getElementById('passwordCurrent').focus();
+}
+async function submitPortalPasswordChange(event){
+  event?.preventDefault();if(portalAuth.busy||!portalAuth.client||!portalAuth.session)return;
+  const form=document.getElementById('portalPasswordForm');if(!form.reportValidity())return;
+  const current=document.getElementById('passwordCurrent'),password=document.getElementById('passwordNew'),confirm=document.getElementById('passwordConfirm');
+  const status=document.getElementById('passwordChangeStatus'),button=document.getElementById('passwordChangeSubmit');
+  if(password.value!==confirm.value){status.textContent='The new passwords do not match.';confirm.focus();return;}
+  if(password.value===current.value){status.textContent='Choose a different password from your temporary or current password.';password.focus();return;}
+  portalAuth.busy=true;button.disabled=true;status.textContent='Saving your password…';
+  try{
+    const {error}=await portalAuth.client.auth.updateUser({current_password:current.value,password:password.value});
+    if(error){
+      const messages={same_password:'Choose a password different from your current password.',weak_password:'Choose a stronger password with at least 12 characters.',invalid_credentials:'The current password was not recognized. Please try again.',reauthentication_needed:'Sign out and sign in again, then set your password.',reauthentication_not_valid:'Sign out and sign in again, then set your password.'};
+      status.textContent=messages[error.code]||'The password could not be saved. Check your current password and connection, then retry.';return;
+    }
+    clearPortalPasswordFields();
+    const {data,error:sessionError}=await portalAuth.client.auth.getSession();if(sessionError)throw sessionError;
+    await refreshPortalAccess(data.session);
+    if(portalAuth.passwordChangeRequired){status.textContent='The password update is not confirmed yet. Refresh account access to check again.';return;}
+    if(document.getElementById('changePassword').classList.contains('active'))showScreen('home',{historyMode:'replace'});
+    showPortalNavNotice('Your password has been updated.');
+  }catch(error){status.textContent='The update could not be confirmed. Sign out and try your new password before retrying.';}
+  finally{portalAuth.busy=false;button.disabled=false;}
+}
 function clearProtectedPortalState(){
   if(typeof workspace!=='undefined'){
     for(const timer of workspace.timers.values())clearTimeout(timer);
@@ -107,7 +143,7 @@ async function refreshPortalAccess(session){
   const retainVerifiedRole=portalAuth.ready&&portalAuth.session?.user?.id&&portalAuth.session.user.id===session?.user?.id;
   if(changedUser)clearProtectedPortalState();
   portalAuth.session=session;
-  if(!retainVerifiedRole){portalAuth.role='public';portalAuth.ready=false;renderPortalAuth();}
+  if(!retainVerifiedRole){portalAuth.role='public';portalAuth.passwordChangeRequired=false;portalAuth.ready=false;renderPortalAuth();}
   if(session){
     try{
       // Auth verifies the JWT, then the database checks server-controlled roles.
@@ -117,6 +153,7 @@ async function refreshPortalAccess(session){
       const access=await response.json();
       if(generation!==portalAuth.generation)return;
       if(access.user_id!==session.user.id)throw new Error('Account access could not be verified.');
+      portalAuth.passwordChangeRequired=access.password_change_required===true;
       portalAuth.role=['staff','admin'].includes(access.role)?access.role:'public';
     }catch(error){
       if(generation===portalAuth.generation){
@@ -127,7 +164,12 @@ async function refreshPortalAccess(session){
   }
   if(generation!==portalAuth.generation)return;
   portalAuth.ready=true;renderPortalAuth();
-  if(!session){clearProtectedPortalState();if(portalProtectedScreens[document.querySelector('.screen.active')?.id])showScreen('home',{historyMode:'replace'});return;}
+  if(!session){clearProtectedPortalState();const active=document.querySelector('.screen.active')?.id;if(portalProtectedScreens[active]||active==='changePassword')showScreen('home',{historyMode:'replace'});return;}
+  if(portalAuth.passwordChangeRequired){
+    clearProtectedPortalState();
+    if(!document.getElementById('changePassword').classList.contains('active'))openPortalPasswordChange({historyMode:'replace'});
+    return;
+  }
   const active=document.querySelector('.screen.active')?.id;
   if(portalProtectedScreens[active]&&!portalHasRole(portalProtectedScreens[active])){
     clearProtectedPortalState();requestPortalSignIn({screen:active,required:portalProtectedScreens[active]},{historyMode:'replace'});return;
@@ -179,7 +221,7 @@ async function submitPortalSignIn(event){
 }
 async function signOutPortal(){
   if(portalAuth.busy)return;portalAuth.busy=true;
-  portalAuth.pending=null;++portalAuth.generation;portalAuth.role='public';portalAuth.session=null;portalAuth.ready=true;renderPortalAuth();clearProtectedPortalState();
+  portalAuth.pending=null;++portalAuth.generation;portalAuth.role='public';portalAuth.passwordChangeRequired=false;portalAuth.session=null;portalAuth.ready=true;renderPortalAuth();clearProtectedPortalState();clearPortalPasswordFields();
   showScreen('home',{historyMode:'replace'});
   try{await portalAuth.client?.auth.signOut({scope:'local'});}finally{try{sessionStorage.removeItem('otr_portal_auth_v2');}catch{}portalAuth.busy=false;}
 }

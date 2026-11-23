@@ -60,6 +60,8 @@ The browser suite needs Python Playwright and Chromium (`CHROMIUM_PATH` may over
 
 Apply the reviewed V2 migration and frontend together using the [rollout sequence](docs/v2-auth-rollout.md). Do not replay the old beta schema files over secured production: their anonymous policies predate Auth. Public Use Part has a constrained server operation; anonymous clients have no general inventory UPDATE privilege. Management requires both a valid Auth session and the assigned role. Auth does not replace visible initials.
 
+Temporary-password accounts must set their own password before management access is enabled; the database enforces this requirement. Signed-in users can also change their password from the header.
+
 Sessions use tab-scoped sessionStorage, with an in-memory fallback. Draft/photo data remains in Supabase; the existing offline submission queue is retained. No password or server key is stored in application files.
 
 ## Workflow references

@@ -107,6 +107,9 @@ class Backend:
         self.auth_tokens={}
         self.auth_refresh={}
         self.auth_roles={'staff':'staff','admin':'admin','unassigned':'public'}
+        self.auth_passwords={who:'fixture-only-password' for who in self.auth_roles}
+        self.auth_password_required=set()
+        self.fail_next_password_change=False
         self.auth_calls=[]
         self.denied_requests=[]
         self.intake_requests = {}
@@ -312,7 +315,7 @@ class Backend:
     def auth_route(self,route):
         request=route.request;parsed=urlsplit(request.url)
         self.auth_calls.append(dict(method=request.method,path=parsed.path))
-        def reply(data,status=200):route.fulfill(status=status,content_type='application/json',body=json.dumps(data),headers={'access-control-allow-origin':'*'})
+        def reply(data,status=200):route.fulfill(status=status,content_type='application/json',body=json.dumps(data),headers={'access-control-allow-origin':'*','access-control-expose-headers':'X-Supabase-Api-Version','x-supabase-api-version':'2024-01-01'})
         if request.method=='OPTIONS':
             route.fulfill(status=204,headers={'access-control-allow-origin':'*','access-control-allow-headers':'*','access-control-allow-methods':'GET,POST,PUT'});return
         token=request.headers.get('authorization','').removeprefix('Bearer ')
@@ -320,7 +323,7 @@ class Backend:
             data=request.post_data_json or {};grant=parse_qs(parsed.query).get('grant_type',[''])[0]
             if grant=='password':
                 who=data.get('email','').split('@')[0]
-                if data.get('email')!=who+'@otr.test' or who not in self.auth_roles or data.get('password')!='fixture-only-password':return reply({'error':'invalid_grant','msg':'Invalid login credentials'},400)
+                if data.get('email')!=who+'@otr.test' or who not in self.auth_roles or data.get('password')!=self.auth_passwords[who]:return reply({'error':'invalid_grant','msg':'Invalid login credentials'},400)
             else:
                 who=self.auth_refresh.get(data.get('refresh_token'))
                 if not who:return reply({'error':'invalid_grant','msg':'Refresh token not found'},400)
@@ -328,6 +331,15 @@ class Backend:
         if parsed.path.endswith('/user'):
             who=self.auth_tokens.get(token)
             if not who:return reply({'error':'bad_jwt','msg':'Invalid JWT'},401)
+            if request.method=='PUT':
+                data=request.post_data_json or {}
+                if data.get('current_password')!=self.auth_passwords[who]:return reply({'code':'invalid_credentials','msg':'Incorrect current password'},400)
+                if self.fail_next_password_change:
+                    self.fail_next_password_change=False
+                    return reply({'code':'weak_password','msg':'Password rejected'},422)
+                if len(data.get('password',''))<12:return reply({'code':'weak_password','msg':'Password too short'},422)
+                if data['password']==self.auth_passwords[who]:return reply({'code':'same_password','msg':'Password must differ'},422)
+                self.auth_passwords[who]=data['password'];self.auth_password_required.discard(who)
             return reply(self.auth_user(who))
         if parsed.path.endswith('/logout'):
             self.auth_tokens.pop(token,None);route.fulfill(status=204,headers={'access-control-allow-origin':'*'});return
@@ -336,7 +348,7 @@ class Backend:
     def api_role(self,request):
         token=request.headers.get('authorization','').removeprefix('Bearer ')
         who=self.auth_tokens.get(token)
-        return self.auth_roles.get(who,'public'),who
+        return ('public' if who in self.auth_password_required else self.auth_roles.get(who,'public')),who
 
     def authorize_api(self,route):
         request=route.request;parsed=urlsplit(request.url)
@@ -345,7 +357,7 @@ class Backend:
         if '/storage/v1/' in parsed.path and request.method=='GET' and parse_qs(parsed.query).get('token')==['fixture']:return True
         path=parsed.path.split('/rest/v1/',1)[-1]
         if path=='rpc/portal_access':
-            route.fulfill(status=200,content_type='application/json',body=json.dumps({'role':role,'user_id':self.auth_user(who)['id'] if who else None}));return False
+            route.fulfill(status=200,content_type='application/json',body=json.dumps({'role':role,'user_id':self.auth_user(who)['id'] if who else None,'password_change_required':who in self.auth_password_required}));return False
         if path=='rpc/inventory_tag_links':
             route.fulfill(status=200,content_type='application/json',body=json.dumps([{'tag_id':c['tag_id'],'inventory_item_id':c['inventory_item_id']} for c in self.drafts.values() if c.get('inventory_item_id')]));return False
         public=path=='rpc/use_inventory_part' or path=='submissions' and request.method=='POST' or request.method=='GET' and path in ['inventory_items','inventory_bins','inventory_carts','vehicles']
@@ -718,6 +730,40 @@ def v2_auth_checks(page,backend):
     # Old protected history entries cannot render after sign-out.
     page.evaluate("renderPortalScreen('adminAssistant')");page.wait_for_selector('#signIn.active')
     assert not page.locator('#adminAssistant.active').count()
+    # First-login setup survives refresh and cannot be bypassed with direct writes.
+    backend.auth_password_required.add('admin')
+    page.evaluate("openAdminAssistant()")
+    sign_in(page,'admin');page.wait_for_selector('#changePassword.active')
+    assert page.evaluate("portalAuth.passwordChangeRequired && !portalHasRole('admin')")
+    status=page.evaluate("async()=>{const r=await fetch(SUPABASE_URL+'/rest/v1/rpc/save_vehicle_registry',{method:'POST',headers:portalBackendHeaders({'Content-Type':'application/json'}),body:'{}'});return r.status}")
+    assert status==403 and backend.items==before
+    page.reload();page.wait_for_selector('#changePassword.active')
+    page.evaluate('openAdminAssistant()');page.wait_for_selector('#changePassword.active')
+    for width,height,label in [(390,844,'iphone'),(800,1280,'fire')]:
+        page.set_viewport_size({'width':width,'height':height})
+        assert page.evaluate('document.documentElement.scrollWidth<=window.innerWidth')
+        page.screenshot(path=str(OUTPUT/('v2-password-'+label+'.png')),full_page=True)
+    page.set_viewport_size({'width':1280,'height':1000})
+    page.fill('#passwordCurrent','fixture-only-password');page.fill('#passwordNew','new-fixture-only-password');page.fill('#passwordConfirm','mismatched-fixture-password')
+    calls=len(backend.auth_calls);page.locator('#passwordChangeSubmit').click()
+    assert 'do not match' in page.inner_text('#passwordChangeStatus') and len(backend.auth_calls)==calls
+    page.fill('#passwordConfirm','new-fixture-only-password');backend.fail_next_password_change=True
+    page.locator('#passwordChangeSubmit').click();page.wait_for_function("!portalAuth.busy && document.getElementById('passwordChangeStatus').textContent!=='Saving your password…'")
+    assert 'stronger' in page.inner_text('#passwordChangeStatus'),(page.inner_text('#passwordChangeStatus'),backend.auth_calls[-5:])
+    assert page.evaluate('portalAuth.passwordChangeRequired')
+    page.fill('#passwordCurrent','wrong-current-password');page.locator('#passwordChangeSubmit').click()
+    page.wait_for_function("!portalAuth.busy && document.getElementById('passwordChangeStatus').textContent.includes('not recognized')")
+    page.fill('#passwordCurrent','fixture-only-password');page.locator('#passwordChangeSubmit').click()
+    page.wait_for_selector('#adminAssistant.active')
+    page.wait_for_function("!portalAuth.busy && portalHasRole('admin')")
+    assert page.evaluate("['passwordCurrent','passwordNew','passwordConfirm'].every(id=>!document.getElementById(id).value)")
+    assert 'new-fixture-only-password' not in page.evaluate('JSON.stringify(sessionStorage)+JSON.stringify(localStorage)')
+    page.evaluate('signOutPortal()');page.evaluate('openAdminAssistant()')
+    page.fill('#signInEmail','admin@otr.test');page.fill('#signInPassword','fixture-only-password');page.locator('#signInSubmit').click()
+    page.wait_for_function("!portalAuth.busy && document.getElementById('signInStatus').textContent.includes('not recognized')")
+    page.fill('#signInPassword','new-fixture-only-password');page.locator('#signInSubmit').click();page.wait_for_selector('#adminAssistant.active')
+    assert not page.evaluate('portalAuth.passwordChangeRequired')
+    page.evaluate('signOutPortal()');backend.auth_passwords['admin']='fixture-only-password'
     # An invalid stored identity must not poison the public request headers.
     page.goto(base_url);page.wait_for_function('vehicleRegistryReady && portalAuth.ready')
     session=backend.auth_session('staff');backend.auth_tokens.pop(session['access_token'])
@@ -1362,7 +1408,7 @@ def run_checks(page, backend):
         if screen != "home":
             page.locator("#globalHomeButton").click()
         page.wait_for_selector("#home.active")
-    return dict(result="PASS", v2_home_hierarchy_and_responsive_layouts="PASS", v2_auth_role_and_direct_api_gates="PASS", v2_login_return_session_and_logout="PASS", public_admin_access_requests="PASS", shared_creation_workspace="PASS", duplicate_stock_choices="PASS", bin_retirement="PASS", bin_and_part_names="PASS", sub_bins_follow_parent="PASS", vehicle_administration="PASS", chassis_bin_sequence="PASS", shared_chassis_compatibility="PASS", screens_with_home_navigation=len(screens), crew_search_first="PASS", combined_location_bin="PASS", exact_vehicle_selection="PASS",
+    return dict(result="PASS", v2_home_hierarchy_and_responsive_layouts="PASS", v2_auth_role_and_direct_api_gates="PASS", v2_login_return_session_and_logout="PASS", v2_required_password_change="PASS", public_admin_access_requests="PASS", shared_creation_workspace="PASS", duplicate_stock_choices="PASS", bin_retirement="PASS", bin_and_part_names="PASS", sub_bins_follow_parent="PASS", vehicle_administration="PASS", chassis_bin_sequence="PASS", shared_chassis_compatibility="PASS", screens_with_home_navigation=len(screens), crew_search_first="PASS", combined_location_bin="PASS", exact_vehicle_selection="PASS",
                 known_null_and_zero_use="PASS", explicit_initials_all_paths="PASS", use_retry_idempotency="PASS",
                 pending_use_navigation="PASS", read_only_activity_history="PASS",
                 management_and_fast_move="PASS", ledger_events=len(backend.events), successful_inventory_requests=len(backend.writes),

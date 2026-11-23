@@ -11,12 +11,37 @@ create schema if not exists otr_portal_internal;
 revoke all on schema otr_portal_internal from public;
 grant usage on schema otr_portal_internal to anon,authenticated;
 
+-- Temporary-password accounts cannot manage the portal until Auth records a
+-- different password. Keep only a fingerprint of Auth's existing password hash
+-- in a private, client-inaccessible table; no user metadata can clear the gate.
+create table if not exists otr_portal_internal.password_setup(
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  initial_password_fingerprint bytea not null,
+  required_at timestamptz not null default now()
+);
+alter table otr_portal_internal.password_setup enable row level security;
+revoke all on table otr_portal_internal.password_setup from public,anon,authenticated;
+insert into otr_portal_internal.password_setup(user_id,initial_password_fingerprint)
+select id,sha256(convert_to(encrypted_password,'UTF8')) from auth.users
+where raw_app_meta_data->>'otr_portal_role' in ('admin','staff','manager')
+  and coalesce(encrypted_password,'')<>''
+on conflict(user_id) do nothing;
+
+create or replace function otr_portal_internal.password_change_required()
+returns boolean language sql stable security definer set search_path=pg_catalog as $$
+  select exists(select 1 from otr_portal_internal.password_setup p join auth.users u on u.id=p.user_id
+    where u.id=auth.uid() and p.initial_password_fingerprint=sha256(convert_to(coalesce(u.encrypted_password,''),'UTF8')));
+$$;
+revoke all on function otr_portal_internal.password_change_required() from public,anon,authenticated;
+grant execute on function otr_portal_internal.password_change_required() to anon,authenticated;
+
 -- Only server-controlled app metadata grants a role. Reading the current Auth
 -- record also makes role removals effective without waiting for JWT renewal.
 create or replace function otr_portal_internal.portal_role()
 returns text language sql stable security definer set search_path=pg_catalog as $$
   select coalesce((select case raw_app_meta_data->>'otr_portal_role' when 'admin' then 'admin' when 'staff' then 'staff' when 'manager' then 'staff' else 'public' end
-    from auth.users where id=auth.uid() and email_confirmed_at is not null and deleted_at is null and (banned_until is null or banned_until<=now())),'public');
+    from auth.users where id=auth.uid() and email_confirmed_at is not null and deleted_at is null and (banned_until is null or banned_until<=now())
+      and not otr_portal_internal.password_change_required()),'public');
 $$;
 revoke all on function otr_portal_internal.portal_role() from public,anon,authenticated;
 grant execute on function otr_portal_internal.portal_role() to anon,authenticated;
@@ -35,7 +60,7 @@ grant execute on function otr_portal_internal.require_role(text) to authenticate
 
 create or replace function public.portal_access()
 returns jsonb language sql stable security invoker set search_path=pg_catalog as $$
-  select jsonb_build_object('role',otr_portal_internal.portal_role(),'user_id',auth.uid());
+  select jsonb_build_object('role',otr_portal_internal.portal_role(),'user_id',auth.uid(),'password_change_required',otr_portal_internal.password_change_required());
 $$;
 revoke all on function public.portal_access() from public,anon,authenticated;
 grant execute on function public.portal_access() to anon,authenticated;

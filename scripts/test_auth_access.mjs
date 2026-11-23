@@ -21,7 +21,7 @@ async function call(who,q,p=[],initials='QA',extraClaims={}){
 const rpc=async(who,name,args,initials='QA')=>(await call(who,`select ${name}(${args.map((_,i)=>'$'+(i+1)).join(',')}) as result`,args,initials)).rows[0].result;
 try{
   await db.exec(`create role anon;create role authenticated;create schema auth;
-    create table auth.users(id uuid primary key,raw_app_meta_data jsonb default '{}',raw_user_meta_data jsonb default '{}',email_confirmed_at timestamptz,deleted_at timestamptz,banned_until timestamptz);
+    create table auth.users(id uuid primary key,raw_app_meta_data jsonb default '{}',raw_user_meta_data jsonb default '{}',encrypted_password text default 'original-auth-password-hash',email_confirmed_at timestamptz,deleted_at timestamptz,banned_until timestamptz);
     create function auth.uid() returns uuid language sql stable as $$select (nullif(current_setting('request.jwt.claims',true),'')::jsonb->>'sub')::uuid$$;
     create function auth.jwt() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claims',true),'')::jsonb,'{}')$$;
     grant usage on schema auth to anon,authenticated;
@@ -35,6 +35,17 @@ try{
   for(const [who,id] of Object.entries(actor))await db.query('insert into auth.users(id,raw_app_meta_data,email_confirmed_at,banned_until) values($1,$2,now(),$3)',[id,{otr_portal_role:who==='disabled'?'staff':who==='unassigned'?null:who},who==='disabled'?'2099-01-01':null]);
   await db.exec(v2);assert.deepEqual(await snapshot(),baseline);
   assert.equal((await rpc('public','portal_access',[])).role,'public');
+  for(const who of ['staff','admin']){
+    const access=await rpc(who,'portal_access',[]);
+    assert.equal(access.password_change_required,true);assert.equal(access.role,'public');
+    await assert.rejects(rpc(who,'save_inventory_workspace_draft',[randomUUID(),0,{data:{}},'QA']),/authorized team/);
+    await assert.rejects(call(who,'select * from otr_portal_internal.password_setup'),/permission denied/);
+    await assert.rejects(call(who,'delete from otr_portal_internal.password_setup where user_id=$1',[actor[who]]),/permission denied/);
+    await db.query("update auth.users set raw_user_meta_data='{\"password_change_required\":false}' where id=$1",[actor[who]]);
+    assert.equal((await rpc(who,'portal_access',[])).password_change_required,true);
+    await db.query("update auth.users set encrypted_password='new-auth-password-hash' where id=$1",[actor[who]]);
+    assert.equal((await rpc(who,'portal_access',[])).password_change_required,false);
+  }
   assert.equal((await rpc('staff','portal_access',[])).role,'staff');
   assert.equal((await rpc('admin','portal_access',[])).role,'admin');
   assert.equal((await rpc('disabled','portal_access',[])).role,'public');
@@ -96,5 +107,5 @@ try{
   const implementations=await rows("select proname,prosecdef from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='otr_portal_internal' and proname like '%_v2_impl'");
   assert(implementations.every(p=>p.prosecdef===(p.proname==='use_inventory_part_v2_impl')));
   assert.equal((await one("select p.prosecdef from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and proname='use_inventory_part'")).prosecdef,false);
-  console.log('PASS V2 PostgreSQL: owner preflight, unchanged data, explicit current roles, forged/stale metadata denied, public browse/Use Part/forms, no anonymous management writes, staff/admin separation, initials/ledger/retry preservation, staff Storage, public printed-tag lookup and immediate role removal');
+  console.log('PASS V2 PostgreSQL: owner preflight, server-enforced first-password change, private setup fingerprints, unchanged data, explicit current roles, forged/stale metadata denied, public browse/Use Part/forms, no anonymous management writes, staff/admin separation, initials/ledger/retry preservation, staff Storage, public printed-tag lookup and immediate role removal');
 }finally{await db.close();}

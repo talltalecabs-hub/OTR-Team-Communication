@@ -40,6 +40,23 @@ identity means public access. User-editable `user_metadata` is never trusted.
 The private role helper reads the current Auth record, so removing a role
 does not wait for a stale JWT claim to expire.
 
+Accounts provisioned with temporary passwords are enrolled in the private
+`otr_portal_internal.password_setup` table. The rollout enrolls the existing
+Staff/Admin accounts. It stores only a SHA-256 fingerprint of Auth's existing
+password hash, never a plaintext password. Neither client role can read or
+change this table. While the Auth password still matches that fingerprint,
+`portal_access()` reports `password_change_required: true` and management roles
+resolve to public. Both RLS and RPC checks enforce this even if the UI is
+bypassed. User metadata cannot dismiss the requirement.
+
+After sign-in, Set Your Password asks for the temporary/current password and
+matching new passwords (at least 12 characters). Supabase Auth validates and
+updates the password through `auth.updateUser`; only the actual password change
+unlocks management. A rejected update stays on the form. A successful update
+returns to the original management destination without replaying a mutation.
+Setup survives a refresh, and the signed-in header also offers Change Password
+for later changes. Password inputs are cleared after success or sign-out.
+
 RLS and grants deny anonymous management table writes, protected reads and
 management RPCs. Staff/admin RPC entry points also check the role. The installed
 operation bodies, arguments and defaults are retained in private invoker
@@ -99,9 +116,12 @@ remain deliberate administrator operations for this first version.
    open tabs. Public browse, forms and the old Use Part signature remain
    compatible during this short window. Old cached management clients will be
    denied and must refresh/sign in. Do not leave only half of the rollout done.
-5. **Smoke-check as owner and logged out.** Confirm the owner can enter
-   Administrative and management, then sign out and verify public search/use
-   still works while direct management writes are denied.
+5. **Smoke-check as owner and logged out.** Confirm temporary-password sign-in
+   opens Set Your Password and management is denied until setup finishes. The
+   owner chooses their own password; deployment checks must not consume that
+   first-login step on their behalf. Then verify public search/use and direct
+   management denials. Full password-update/return/new-login behavior is covered
+   by browser and PostgreSQL regression tests.
 
 Do **not** rerun the historical beta schema/seed files over a secured production
 database: they can reintroduce anonymous policies. Do not reseed inventory or
@@ -126,16 +146,31 @@ revoke management access. Never copy a requested role from a public form or
 user metadata into an authorization decision. A role editor/automatic approval
 workflow is outside this pass.
 
+When issuing a temporary password to a future account, enroll its actual Auth
+user ID using trusted server administration in the same transaction as the role
+grant. Accounts that chose their own password during signup need no temporary
+password enrollment:
+
+```sql
+insert into otr_portal_internal.password_setup(user_id,initial_password_fingerprint)
+select id,sha256(convert_to(encrypted_password,'UTF8')) from auth.users
+where id='<REVIEWED_AUTH_USER_UUID>'::uuid and coalesce(encrypted_password,'')<>''
+on conflict(user_id) do update
+set initial_password_fingerprint=excluded.initial_password_fingerprint,
+    required_at=now();
+```
+
 ## Verification
 
 - `node scripts/validate.mjs`: syntax, inline handlers, canonical seed/workbook
   and label specifications.
 - `python scripts/test_portal.py`: real browser with intercepted Supabase/Auth
   endpoints; public search/use, direct API denials, Staff/Admin/default-deny
-  roles, login destinations, refresh/sign-out/back navigation, access requests,
+  roles, required password setup, failed updates, old/new password login,
+  login destinations, refresh/sign-out/back navigation, access requests,
   all prior inventory/submission/label flows, and 390/800/1280-width layouts.
 - `scripts/test_auth_access.mjs`: actual isolated PostgreSQL RLS/grants/RPCs;
-  owner rollout guard, unchanged baseline data, forged/stale metadata denial,
+  owner rollout guard, private server-enforced password setup, unchanged baseline data, forged/stale metadata denial,
   public decrement/ledger/retry, staff/admin separation, protected Storage and
   public stable-tag lookup.
 - Existing `test_inventory_update.mjs`, `test_inventory_crew.mjs`,

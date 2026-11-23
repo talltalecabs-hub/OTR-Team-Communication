@@ -12,7 +12,7 @@
 <div class="app">
   <header class="topbar">
     <div class="brand"><img class="otr-brand-mark" src="assets/brand/otr-mark.svg" alt="OTR" width="250" height="71" /><h1>Team Portal</h1><p>Building winning systems with winning people.</p></div>
-    <div class="portal-header-actions"><button id="globalHomeButton" type="button" class="secondary hidden" onclick="resetAndHome()">⌂ Home</button><button id="portalSignIn" type="button" class="portal-sign-in" onclick="requestPortalSignIn()">Sign In</button><div id="portalAccount" class="portal-account hidden"><span id="portalAccountLabel"></span><span id="portalAccountEmail" class="sr-only"></span><button type="button" onclick="signOutPortal()">Sign Out</button></div></div>
+    <div class="portal-header-actions"><button id="globalHomeButton" type="button" class="secondary hidden" onclick="resetAndHome()">⌂ Home</button><button id="portalSignIn" type="button" class="portal-sign-in" onclick="requestPortalSignIn()">Sign In</button><div id="portalAccount" class="portal-account hidden"><span id="portalAccountLabel"></span><span id="portalAccountEmail" class="sr-only"></span><button type="button" onclick="openPortalPasswordChange()">Change Password</button><button type="button" onclick="signOutPortal()">Sign Out</button></div></div>
   </header>
   <section id="home" class="screen active">
     <div class="hero home-intro"><h2>What would you like to do?</h2><p>Find inventory, record event notes, or share team feedback.</p></div>
@@ -24,6 +24,22 @@
     <div class="auth-layout"><div class="auth-panel card"><div class="auth-mark" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V6a4 4 0 0 1 8 0v4M12 14v3"/></svg></div><h2 id="signInTitle" class="sectiontitle">Team Sign In</h2><p id="signInReason" class="subtitle">Sign in for team management tools. Public portal features stay open.</p>
     <form id="portalSignInForm" onsubmit="submitPortalSignIn(event)"><label for="signInEmail">Email</label><input id="signInEmail" type="email" autocomplete="username" inputmode="email" required /><label for="signInPassword">Password</label><input id="signInPassword" type="password" autocomplete="current-password" required /><p id="signInStatus" class="auth-status" role="status" aria-live="polite"></p><button id="signInSubmit" class="primary" type="submit">Sign In</button></form><button class="auth-text-button" type="button" onclick="refreshPortalAccount()">Refresh account access</button>
     <details id="adminAccessRequest" class="auth-access-request"><summary>Request Admin Access</summary><p>Tell the team why you need administrative access. A request does not grant access automatically.</p><form id="adminAccessForm" onsubmit="submitAdminAccessRequest(event)"><label for="adminAccessName">Your name</label><input id="adminAccessName" autocomplete="name" maxlength="120" required /><label for="adminAccessEmail">Your email</label><input id="adminAccessEmail" type="email" inputmode="email" autocomplete="email" maxlength="254" required /><label for="adminAccessReason">What do you need access for?</label><textarea id="adminAccessReason" maxlength="2000" rows="4" required></textarea><p id="adminAccessStatus" role="status" aria-live="polite"></p><button id="adminAccessSubmit" class="secondary" type="submit">Submit Access Request</button></form></details></div></div>
+  </section>
+  <section id="changePassword" class="screen">
+    <button class="secondary back" type="button" onclick="resetAndHome()">← Home</button>
+    <div class="auth-layout"><div class="auth-panel card">
+      <h2 class="sectiontitle">Set Your Password</h2>
+      <p id="passwordChangeReason" class="subtitle">Choose your own password before opening management tools.</p>
+      <form id="portalPasswordForm" onsubmit="submitPortalPasswordChange(event)">
+        <label for="passwordCurrent">Temporary / current password</label><input id="passwordCurrent" type="password" autocomplete="current-password" required />
+        <label for="passwordNew">New password</label><input id="passwordNew" type="password" autocomplete="new-password" minlength="12" required aria-describedby="passwordChangeHint" />
+        <p id="passwordChangeHint" class="small">Use at least 12 characters and a password you do not use elsewhere.</p>
+        <label for="passwordConfirm">Confirm new password</label><input id="passwordConfirm" type="password" autocomplete="new-password" minlength="12" required />
+        <p id="passwordChangeStatus" class="auth-status" role="status" aria-live="polite"></p>
+        <button id="passwordChangeSubmit" class="primary" type="submit">Save Password &amp; Continue</button>
+      </form>
+      <button class="auth-text-button" type="button" onclick="refreshPortalAccount()">Refresh account access</button>
+    </div></div>
   </section>
   <section id="categories" class="screen">
     <button class="secondary back" onclick="resetAndHome()">← Home</button>
