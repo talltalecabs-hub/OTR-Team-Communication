@@ -77,8 +77,10 @@ async function submitOperationalForm(){
   if(!def) return;
 
   const values={};
+  const otherVehicle=def.allowOtherVehicle===true && document.getElementById(`op-${def.vehicleField}`)?.value===operationalOtherVehicleValue;
   let missingField=null;
   for(const field of def.fields){
+    if(field.otherVehicleOnly && !otherVehicle) continue;
     const el=document.getElementById(`op-${field.id}`);
     if(!el) continue;
     const value=field.type==="checkbox" ? el.checked : el.value.trim();
@@ -97,7 +99,16 @@ async function submitOperationalForm(){
 
   if(def.vehicleField){
     const selected=vehicleRegistry.find(vehicle=>vehicle.is_active!==false&&vehicle.vehicle_code===values[def.vehicleField]);
-    if(selected){
+    if(otherVehicle){
+      values.vehicle="Other / non-fleet";
+      values.vehicle_source="Other / non-fleet";
+      values.vehicle_name=values.vehicle_other;
+      values.vehicle_label=`Other — ${values.vehicle_other}`;
+    }else if(def.allowOtherVehicle && (!selected || selected.platform!==values.vehicle_category)){
+      alert("Choose an exact vehicle or select Other.");
+      document.getElementById(`op-${def.vehicleField}`)?.focus();
+      return;
+    }else if(selected){
       values.vehicle_name=selected.vehicle_name;
       values.vehicle_label=vehicleDisplayLabel(selected);
       values.vehicle_status=selected.status||"Active";
@@ -321,7 +332,8 @@ function renderSharedSubmissions(){
               driver:"Driver / initials",reporter:"Reporter / initials",
               car:"Car / vehicle category",unit:"Car / unit identifier",
               vehicle_category:"Chassis category",vehicle:"Exact vehicle",
-              vehicle_name:"Exact vehicle name",vehicle_label:"Exact vehicle",vehicle_status:"Vehicle status",
+              vehicle_name:"Vehicle name",vehicle_label:"Vehicle",vehicle_status:"Vehicle status",
+              vehicle_other:"Other vehicle / customer car",vehicle_source:"Vehicle selection",
               session:"Session",focus:"Focus",
               improve:"Improve / understand",experiment:"Experiment / small test",
               readiness:"Readiness",confidence:"Car confidence",
